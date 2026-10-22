@@ -18,17 +18,6 @@ def get_main_menu_keyboard():
     return keyboard
 
 
-def get_training_answer_keyboard(words):
-    """Создаёт клавиатуру с вариантами ответов для тренировки."""
-    keyboard = InlineKeyboardMarkup()
-    for word in words:
-        keyboard.row(InlineKeyboardButton(text=word, callback_data=f"answer_{word}"))
-    
-    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
-    
-    return keyboard
-
-
 def get_back_to_menu_keyboard():
     """Создаёт клавиатуру с кнопкой возврата в меню."""
     keyboard = InlineKeyboardMarkup()

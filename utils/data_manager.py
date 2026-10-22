@@ -3,6 +3,8 @@
 """
 
 import os
+import json
+import random
 from typing import Dict, List, Any, Optional
 from config import USE_MONGODB, MONGODB_URI
 
@@ -23,10 +25,36 @@ class DataManager:
             self.db = MongoDB(MONGODB_URI)
         else:
             self.db = Database()
+        
+        # Загружаем задания из JSON файла
+        self.tasks = self._load_tasks()
+    
+    def _load_tasks(self) -> List[Dict[str, Any]]:
+        """Загружает задания из paronyms.json."""
+        try:
+            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            data_path = os.path.join(script_dir, 'data', 'paronyms.json')
+            
+            with open(data_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get('tasks', [])
+        except Exception as e:
+            print(f"Ошибка загрузки заданий: {e}")
+            return []
     
     def get_random_question(self) -> Optional[Dict[str, Any]]:
-        """Возвращает случайный вопрос из базы."""
-        return self.db.get_random_question()
+        """Возвращает случайный вопрос из файла."""
+        if not self.tasks:
+            return None
+        
+        task = random.choice(self.tasks)
+        return {
+            'id': task['id'],
+            'sentences': task['sentences'],
+            'correct_answer': task['correct_answer'],
+            'wrong_word': task.get('wrong_word', ''),
+            'explanation': task.get('explanation', '')
+        }
     
     def get_user_stats(self, user_id: int, username: str = None) -> Dict[str, int]:
         """Возвращает статистику пользователя."""
