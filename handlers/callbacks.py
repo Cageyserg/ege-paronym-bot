@@ -19,7 +19,7 @@ current_questions = {}
 def show_main_menu(call, bot):
     """Показывает главное меню."""
     bot.edit_message_text(
-        "Главное меню\n\nВыберите режим работы:",
+        "🏠 Главное меню\n\nВыберите режим работы:",
         call.message.chat.id,
         call.message.message_id,
         reply_markup=get_main_menu_keyboard()
@@ -71,14 +71,14 @@ def handle_answer(call, bot):
     if is_correct:
         solved_count = data_manager.get_user_solved_words_count(user_id)
         response_text = (
-            f"Правильно!\n\n"
+            f"✅ Правильно!\n\n"
             f"Ответ: {question['correct']}\n"
             f"{question['explanation']}\n\n"
-            f"Вы освоили {solved_count} слов!"
+            f"📚 Вы освоили {solved_count} слов!"
         )
     else:
         response_text = (
-            f"Неправильно!\n\n"
+            f"❌ Неправильно!\n\n"
             f"Ваш ответ: {answer}\n"
             f"Правильный ответ: {question['correct']}\n\n"
             f"{question['explanation']}\n\n"
@@ -104,7 +104,7 @@ def handle_answer(call, bot):
         # Отправляем новое сообщение с новым вопросом
         bot.send_message(
             call.message.chat.id,
-            f"Следующий вопрос\n\n"
+            f"➡️ Следующий вопрос\n\n"
             f"Вставьте правильное слово:\n\n"
             f"{new_question['sentence']}",
             reply_markup=get_training_answer_keyboard(new_question['words'])
@@ -112,7 +112,7 @@ def handle_answer(call, bot):
     else:
         bot.send_message(
             call.message.chat.id,
-            "Вы прошли все доступные вопросы!",
+            "🎉 Вы прошли все доступные вопросы!",
             reply_markup=get_main_menu_keyboard()
         )
 
