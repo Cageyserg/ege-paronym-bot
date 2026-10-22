@@ -23,12 +23,9 @@ def get_main_menu_keyboard():
 
 
 def get_training_answer_keyboard(words):
-    """Создаёт клавиатуру с вариантами ответов для тренировки."""
+    """Создаёт клавиатуру для тренировки (без кнопок выбора ответа)."""
     keyboard = InlineKeyboardMarkup()
-    for word in words:
-        keyboard.row(InlineKeyboardButton(text=word, callback_data=f"answer_{word}"))
-    
-    keyboard.row(InlineKeyboardButton(text="➡️ Следующий вопрос", callback_data="next_question"))
+    # Кнопка для возврата в меню
     keyboard.row(InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu"))
     
     return keyboard
