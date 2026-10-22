@@ -70,6 +70,20 @@ class Database:
                 )
             """)
             
+            # Таблица решённых слов пользователя
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_solved_words (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    paronym_id INTEGER NOT NULL,
+                    word TEXT NOT NULL,
+                    solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, paronym_id, word),
+                    FOREIGN KEY (user_id) REFERENCES user_stats(user_id),
+                    FOREIGN KEY (paronym_id) REFERENCES paronyms(id)
+                )
+            """)
+            
             conn.commit()
     
     def _load_paronyms_from_json(self):
@@ -255,7 +269,7 @@ class Database:
                 "max_streak": row["max_streak"]
             }
     
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None):
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, paronym_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -269,6 +283,13 @@ class Database:
                         max_streak = MAX(max_streak, streak + 1)
                     WHERE user_id = ?
                 """, (user_id,))
+                
+                # Добавляем решённое слово
+                if paronym_id and word:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO user_solved_words (user_id, paronym_id, word)
+                        VALUES (?, ?, ?)
+                    """, (user_id, paronym_id, word))
             else:
                 cursor.execute("""
                     UPDATE user_stats 
@@ -327,3 +348,14 @@ class Database:
                 WHERE user_id = ?
             """, (user_id,))
             conn.commit()
+    
+    def get_user_solved_words_count(self, user_id: int) -> int:
+        """Возвращает количество уникальных решённых слов пользователя."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COUNT(DISTINCT word) FROM user_solved_words WHERE user_id = ?",
+                (user_id,)
+            )
+            result = cursor.fetchone()
+            return result[0] if result else 0

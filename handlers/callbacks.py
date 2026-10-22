@@ -65,13 +65,17 @@ def handle_answer(call, bot):
     is_correct = answer.lower() == question['correct'].lower()
     
     # Обновляем статистику
-    data_manager.update_user_stats(user_id, is_correct, username)
+    paronym_id = question.get('paronym_id')
+    word = question.get('correct') if is_correct else None
+    data_manager.update_user_stats(user_id, is_correct, username, paronym_id, word)
     
     if is_correct:
+        solved_count = data_manager.get_user_solved_words_count(user_id)
         response_text = (
             f"✅ Правильно!\n\n"
             f"Ответ: {question['correct']}\n"
-            f"{question['explanation']}"
+            f"{question['explanation']}\n\n"
+            f"📚 Вы освоили {solved_count} слов!"
         )
     else:
         response_text = (
@@ -155,6 +159,7 @@ def show_stats(call, bot):
     user_id = call.from_user.id
     username = call.from_user.username
     stats = data_manager.get_user_stats(user_id, username)
+    solved_count = data_manager.get_user_solved_words_count(user_id)
     
     total = stats['total_answers']
     correct = stats['correct_answers']
@@ -169,12 +174,13 @@ def show_stats(call, bot):
     
     text = (
         f"📊 Ваша статистика\n\n"
+        f"📚 Освоено слов: {solved_count}\n\n"
         f"Всего ответов: {total}\n"
         f"Правильных: {correct}\n"
         f"Неправильных: {incorrect}\n"
         f"Процент правильных: {percentage}%\n\n"
-        f"Текущая серия: {streak}\n"
-        f"Лучшая серия: {max_streak}"
+        f"🔥 Текущая серия: {streak}\n"
+        f"🏆 Лучшая серия: {max_streak}"
     )
     
     bot.edit_message_text(
@@ -203,26 +209,44 @@ def show_leaderboard(call, bot):
     leaderboard = data_manager.get_leaderboard(limit=10)
     
     if not leaderboard:
-        bot.edit_message_text(
-            "🏆 Таблица лидеров\n\n"
-            "Пока нет участников. Станьте первым!",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=get_leaderboard_keyboard()
-        )
+        try:
+            bot.edit_message_text(
+                "🏆 Таблица лидеров\n\n"
+                "Пока нет участников. Станьте первым!",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=get_leaderboard_keyboard()
+            )
+        except Exception as e:
+            # Если редактирование не удалось, отправляем новое сообщение
+            bot.send_message(
+                call.message.chat.id,
+                "🏆 Таблица лидеров\n\n"
+                "Пока нет участников. Станьте первым!",
+                reply_markup=get_leaderboard_keyboard()
+            )
         return
     
     text = "🏆 Таблица лидеров\n\n"
     for entry in leaderboard:
+        username = entry['username'] or f"User {entry['user_id']}"
         text += (
-            f"{entry['rank']}. {entry['username']}\n"
+            f"{entry['rank']}. {username}\n"
             f"   ✅ {entry['correct_answers']} правильных ({entry['percentage']}%)\n"
             f"   🔥 Лучшая серия: {entry['max_streak']}\n\n"
         )
     
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        reply_markup=get_leaderboard_keyboard()
-    )
+    try:
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=get_leaderboard_keyboard()
+        )
+    except Exception as e:
+        # Если редактирование не удалось, отправляем новое сообщение
+        bot.send_message(
+            call.message.chat.id,
+            text,
+            reply_markup=get_leaderboard_keyboard()
+        )

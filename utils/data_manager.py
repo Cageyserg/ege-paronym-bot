@@ -33,9 +33,9 @@ class DataManager:
         """Возвращает статистику пользователя."""
         return self.db.get_user_stats(user_id, username)
     
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None):
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, paronym_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
-        self.db.update_user_stats(user_id, is_correct, username)
+        self.db.update_user_stats(user_id, is_correct, username, paronym_id, word)
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Возвращает таблицу лидеров."""
@@ -44,3 +44,7 @@ class DataManager:
     def reset_user_stats(self, user_id: int):
         """Сбрасывает статистику пользователя."""
         self.db.reset_user_stats(user_id)
+    
+    def get_user_solved_words_count(self, user_id: int) -> int:
+        """Возвращает количество уникальных решённых слов пользователя."""
+        return self.db.get_user_solved_words_count(user_id)
