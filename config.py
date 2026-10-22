@@ -14,11 +14,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 # URL для вебхука (для Render)
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-app.onrender.com")
 
-# MongoDB URI (по умолчанию отключено для Render)
+# MongoDB URI
 MONGODB_URI = os.getenv("MONGODB_URI", None)
 
-# Использовать MongoDB или SQLite (по умолчанию SQLite для Render)
-USE_MONGODB = os.getenv("USE_MONGODB", "false").lower() == "true" and MONGODB_URI is not None
+# Использовать MongoDB, если URI задан, иначе SQLite
+USE_MONGODB = MONGODB_URI is not None
 
 # Пути к файлам
 QUESTIONS_FILE = "data/questions.json"
