@@ -64,9 +64,9 @@ def handle_answer(call, bot):
     is_correct = answer.lower() == question['correct'].lower()
     
     # Обновляем статистику
-    paronym_id = question.get('paronym_id')
+    question_id = question.get('question_id')
     word = question.get('correct') if is_correct else None
-    data_manager.update_user_stats(user_id, is_correct, username, paronym_id, word)
+    data_manager.update_user_stats(user_id, is_correct, username, question_id, word)
     
     if is_correct:
         solved_count = data_manager.get_user_solved_words_count(user_id)
@@ -81,10 +81,7 @@ def handle_answer(call, bot):
             f"❌ Неправильно!\n\n"
             f"Ваш ответ: {answer}\n"
             f"Правильный ответ: {question['correct']}\n\n"
-            f"{question['explanation']}\n\n"
-            f"Значения слов:\n"
-            f"• {question['words'][0]}: {question['definitions'][question['words'][0]]}\n"
-            f"• {question['words'][1]}: {question['definitions'][question['words'][1]]}"
+            f"{question['explanation']}"
         )
     
     bot.edit_message_text(

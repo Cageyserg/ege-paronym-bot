@@ -1,0 +1,34 @@
+{
+  "answers": [
+    {
+      "question_id": 1,
+      "correct": "надеть",
+      "wrong": ["одеть"]
+    },
+    {
+      "question_id": 2,
+      "correct": "одеть",
+      "wrong": ["надеть"]
+    },
+    {
+      "question_id": 3,
+      "correct": "эффективный",
+      "wrong": ["эффектный"]
+    },
+    {
+      "question_id": 4,
+      "correct": "эффектный",
+      "wrong": ["эффективный"]
+    },
+    {
+      "question_id": 5,
+      "correct": "адресат",
+      "wrong": ["адресант"]
+    },
+    {
+      "question_id": 6,
+      "correct": "адресант",
+      "wrong": ["адресат"]
+    }
+  ]
+}

@@ -1,13 +1,13 @@
 """
 Модуль для работы с базой данных SQLite.
-Заменяет JSON-файлы для более надёжного хранения данных и реализации таблицы лидеров.
 """
 
 import sqlite3
 import json
 import os
+import random
 from typing import Dict, List, Any, Optional
-from config import DATA_FILE, STATS_FILE
+from config import QUESTIONS_FILE, ANSWERS_FILE
 
 
 class Database:
@@ -15,10 +15,9 @@ class Database:
     
     def __init__(self, db_path: str = "data/bot_database.db"):
         self.db_path = db_path
-        # Создаём директорию, если её нет
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self._init_db()
-        self._load_paronyms_from_json()
+        self._load_data_from_json()
     
     def _get_connection(self):
         """Создаёт соединение с базой данных."""
@@ -31,29 +30,23 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
-            # Таблица паронимов
+            # Таблица вопросов
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS paronyms (
+                CREATE TABLE IF NOT EXISTS questions (
                     id INTEGER PRIMARY KEY,
-                    word1 TEXT NOT NULL,
-                    word2 TEXT NOT NULL,
-                    definition1 TEXT NOT NULL,
-                    definition2 TEXT NOT NULL,
-                    example1 TEXT NOT NULL,
-                    example2 TEXT NOT NULL,
-                    UNIQUE(word1, word2)
+                    sentence TEXT NOT NULL,
+                    explanation TEXT NOT NULL
                 )
             """)
             
-            # Таблица тестовых вопросов
+            # Таблица ответов
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS test_questions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    paronym_id INTEGER NOT NULL,
-                    sentence TEXT NOT NULL,
-                    correct_word TEXT NOT NULL,
-                    explanation TEXT NOT NULL,
-                    FOREIGN KEY (paronym_id) REFERENCES paronyms(id)
+                CREATE TABLE IF NOT EXISTS answers (
+                    id INTEGER PRIMARY KEY,
+                    question_id INTEGER NOT NULL,
+                    correct TEXT NOT NULL,
+                    wrong TEXT NOT NULL,
+                    FOREIGN KEY (question_id) REFERENCES questions(id)
                 )
             """)
             
@@ -73,161 +66,83 @@ class Database:
                 CREATE TABLE IF NOT EXISTS user_solved_words (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
-                    paronym_id INTEGER NOT NULL,
+                    question_id INTEGER NOT NULL,
                     word TEXT NOT NULL,
                     solved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(user_id, paronym_id, word),
+                    UNIQUE(user_id, question_id, word),
                     FOREIGN KEY (user_id) REFERENCES user_stats(user_id),
-                    FOREIGN KEY (paronym_id) REFERENCES paronyms(id)
+                    FOREIGN KEY (question_id) REFERENCES questions(id)
                 )
             """)
             
             conn.commit()
     
-    def _load_paronyms_from_json(self):
-        """Загружает паронимы из JSON файла в базу данных."""
-        if not os.path.exists(DATA_FILE):
-            return
-        
-        with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
+    def _load_data_from_json(self):
+        """Загружает вопросы и ответы из JSON файлов."""
+        # Проверяем, есть ли уже данные
         with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM questions")
+            if cursor.fetchone()[0] > 0:
+                return  # Данные уже загружены
+        
+        # Загружаем вопросы
+        if os.path.exists(QUESTIONS_FILE):
+            with open(QUESTIONS_FILE, 'r', encoding='utf-8') as f:
+                questions_data = json.load(f)
             
-            for paronym in data.get("paronyms", []):
-                words = paronym["words"]
-                definitions = paronym["definitions"]
-                examples = paronym["examples"]
-                
-                # Вставляем или обновляем пару паронимов
+            for q in questions_data.get("questions", []):
                 cursor.execute("""
-                    INSERT OR REPLACE INTO paronyms 
-                    (id, word1, word2, definition1, definition2, example1, example2)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    paronym["id"],
-                    words[0], words[1],
-                    definitions[words[0]], definitions[words[1]],
-                    examples[words[0]], examples[words[1]]
-                ))
-                
-                # Вставляем тестовые вопросы
-                for question in paronym["test_questions"]:
-                    cursor.execute("""
-                        INSERT INTO test_questions 
-                        (paronym_id, sentence, correct_word, explanation)
-                        VALUES (?, ?, ?, ?)
-                    """, (
-                        paronym["id"],
-                        question["sentence"],
-                        question["correct"],
-                        question["explanation"]
-                    ))
+                    INSERT OR IGNORE INTO questions (id, sentence, explanation)
+                    VALUES (?, ?, ?)
+                """, (q["id"], q["sentence"], q["explanation"]))
+        
+        # Загружаем ответы
+        if os.path.exists(ANSWERS_FILE):
+            with open(ANSWERS_FILE, 'r', encoding='utf-8') as f:
+                answers_data = json.load(f)
             
-            conn.commit()
-    
-    def get_all_paronyms(self) -> List[Dict[str, Any]]:
-        """Возвращает список всех паронимов."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM paronyms")
-            rows = cursor.fetchall()
-            
-            result = []
-            for row in rows:
-                result.append({
-                    "id": row["id"],
-                    "words": [row["word1"], row["word2"]],
-                    "definitions": {
-                        row["word1"]: row["definition1"],
-                        row["word2"]: row["definition2"]
-                    },
-                    "examples": {
-                        row["word1"]: row["example1"],
-                        row["word2"]: row["example2"]
-                    }
-                })
-            return result
-    
-    def get_paronym_by_id(self, paronym_id: int) -> Optional[Dict[str, Any]]:
-        """Возвращает данные паронима по его ID."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM paronyms WHERE id = ?", (paronym_id,))
-            row = cursor.fetchone()
-            
-            if not row:
-                return None
-            
-            return {
-                "id": row["id"],
-                "words": [row["word1"], row["word2"]],
-                "definitions": {
-                    row["word1"]: row["definition1"],
-                    row["word2"]: row["definition2"]
-                },
-                "examples": {
-                    row["word1"]: row["example1"],
-                    row["word2"]: row["example2"]
-                }
-            }
+            for a in answers_data.get("answers", []):
+                cursor.execute("""
+                    INSERT OR IGNORE INTO answers (question_id, correct, wrong)
+                    VALUES (?, ?, ?)
+                """, (a["question_id"], a["correct"], json.dumps(a["wrong"])))
+        
+        conn.commit()
     
     def get_random_question(self) -> Optional[Dict[str, Any]]:
-        """Возвращает случайный вопрос из базы."""
+        """Возвращает случайный вопрос с перемешанными вариантами ответов."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT p.*, q.sentence, q.correct_word, q.explanation
-                FROM test_questions q
-                JOIN paronyms p ON q.paronym_id = p.id
-                ORDER BY RANDOM()
-                LIMIT 1
-            """)
-            row = cursor.fetchone()
             
-            if not row:
+            # Получаем случайный вопрос
+            cursor.execute("SELECT * FROM questions ORDER BY RANDOM() LIMIT 1")
+            question_row = cursor.fetchone()
+            
+            if not question_row:
                 return None
             
+            # Получаем ответы для этого вопроса
+            cursor.execute("SELECT correct, wrong FROM answers WHERE question_id = ?", (question_row["id"],))
+            answer_row = cursor.fetchone()
+            
+            if not answer_row:
+                return None
+            
+            # Формируем список вариантов: правильный + неправильные
+            wrong_list = json.loads(answer_row["wrong"])
+            all_words = [answer_row["correct"]] + wrong_list
+            
+            # Перемешиваем варианты
+            random.shuffle(all_words)
+            
             return {
-                "paronym_id": row["id"],
-                "words": [row["word1"], row["word2"]],
-                "sentence": row["sentence"],
-                "correct": row["correct_word"],
-                "explanation": row["explanation"],
-                "definitions": {
-                    row["word1"]: row["definition1"],
-                    row["word2"]: row["definition2"]
-                }
+                "question_id": question_row["id"],
+                "sentence": question_row["sentence"],
+                "explanation": question_row["explanation"],
+                "correct": answer_row["correct"],
+                "words": all_words
             }
-    
-    def find_paronym_in_text(self, text: str) -> Optional[Dict[str, Any]]:
-        """Ищет пароним в тексте и возвращает правильный вариант с объяснением."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM paronyms")
-            rows = cursor.fetchall()
-            
-            for row in rows:
-                word1, word2 = row["word1"], row["word2"]
-                
-                # Проверяем, есть ли слово1 или слово2 в тексте
-                if word1.lower() in text.lower() or word2.lower() in text.lower():
-                    # Простая эвристика: возвращаем первую найденную пару
-                    # В реальном боте нужен более сложный анализ контекста
-                    return {
-                        "words": [word1, word2],
-                        "definitions": {
-                            word1: row["definition1"],
-                            word2: row["definition2"]
-                        },
-                        "examples": {
-                            word1: row["example1"],
-                            word2: row["example2"]
-                        }
-                    }
-            
-            return None
     
     def get_user_stats(self, user_id: int, username: str = None) -> Dict[str, int]:
         """Возвращает статистику пользователя."""
@@ -237,7 +152,6 @@ class Database:
             row = cursor.fetchone()
             
             if not row:
-                # Создаём запись для нового пользователя
                 cursor.execute("""
                     INSERT INTO user_stats (user_id, username)
                     VALUES (?, ?)
@@ -249,7 +163,6 @@ class Database:
                     "max_streak": 0
                 }
             
-            # Обновляем username, если он изменился
             if username and row["username"] != username:
                 cursor.execute(
                     "UPDATE user_stats SET username = ? WHERE user_id = ?",
@@ -263,28 +176,30 @@ class Database:
                 "max_streak": row["max_streak"]
             }
     
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, paronym_id: int = None, word: str = None):
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, question_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             
             if is_correct:
+                stats = cursor.execute("SELECT * FROM user_stats WHERE user_id = ?", (user_id,)).fetchone()
+                new_streak = (stats["streak"] if stats else 0) + 1
+                new_max_streak = max(stats["max_streak"] if stats else 0, new_streak)
+                
                 cursor.execute("""
                     UPDATE user_stats 
                     SET correct_answers = correct_answers + 1,
-                        streak = streak + 1,
-                        max_streak = MAX(max_streak, streak + 1)
+                        streak = ?,
+                        max_streak = ?
                     WHERE user_id = ?
-                """, (user_id,))
+                """, (new_streak, new_max_streak, user_id))
                 
-                # Добавляем решённое слово
-                if paronym_id and word:
+                if question_id and word:
                     cursor.execute("""
-                        INSERT OR IGNORE INTO user_solved_words (user_id, paronym_id, word)
+                        INSERT OR IGNORE INTO user_solved_words (user_id, question_id, word)
                         VALUES (?, ?, ?)
-                    """, (user_id, paronym_id, word))
+                    """, (user_id, question_id, word))
             else:
-                # Неправильный ответ - только сбрасываем серию
                 cursor.execute("""
                     UPDATE user_stats 
                     SET streak = 0
@@ -342,9 +257,8 @@ class Database:
         """Возвращает количество уникальных решённых слов пользователя."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COUNT(DISTINCT word) FROM user_solved_words WHERE user_id = ?",
-                (user_id,)
-            )
-            result = cursor.fetchone()
-            return result[0] if result else 0
+            cursor.execute("""
+                SELECT COUNT(DISTINCT word) FROM user_solved_words WHERE user_id = ?
+            """, (user_id,))
+            row = cursor.fetchone()
+            return row[0] if row else 0

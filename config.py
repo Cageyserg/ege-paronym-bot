@@ -21,5 +21,6 @@ MONGODB_URI = os.getenv("MONGODB_URI", None)
 USE_MONGODB = os.getenv("USE_MONGODB", "false").lower() == "true" and MONGODB_URI is not None
 
 # Пути к файлам
-DATA_FILE = "data/paronyms.json"
+QUESTIONS_FILE = "data/questions.json"
+ANSWERS_FILE = "data/answers.json"
 STATS_FILE = "data/user_stats.json"
