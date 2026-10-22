@@ -121,18 +121,13 @@ if __name__ == '__main__':
     # Получаем порт из переменной окружения Render
     port = int(os.environ.get('PORT', 5000))
     
-    # Устанавливаем вебхук при запуске
+    # Запуск бота в режиме webhook
     logger.info("Запуск бота в режиме webhook...")
     logger.info(f"BOT_TOKEN: {BOT_TOKEN[:10]}...")
     logger.info(f"WEBHOOK_URL: {WEBHOOK_URL}")
     
-    webhook_url = f"{WEBHOOK_URL}/webhook"
-    try:
-        bot.remove_webhook()
-        bot.set_webhook(url=webhook_url)
-        logger.info(f"Webhook установлен на {webhook_url}")
-    except Exception as e:
-        logger.error(f"Ошибка при установке webhook: {e}", exc_info=True)
+    # Вебхук уже установлен через API, не устанавливаем повторно
+    logger.info("Вебхук должен быть уже установлен через API")
     
     # Запускаем Flask приложение
     logger.info(f"Запуск Flask на порту {port}")
