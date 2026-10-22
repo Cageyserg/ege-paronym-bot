@@ -91,6 +91,9 @@ def webhook():
             json_string = request.get_data().decode('utf-8')
             logger.info(f"Получен webhook: {json_string[:200]}...")
             update = telebot.types.Update.de_json(json_string)
+            logger.info(f"Update type: {type(update)}")
+            
+            # Обрабатываем обновление
             bot.process_new_updates([update])
             logger.info("Webhook обработан успешно")
             return '', 200
