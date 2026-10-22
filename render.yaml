@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: ege-paronym-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn render_main:app
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBHOOK_URL
+        value: https://ege-paronym-bot.onrender.com
+        sync: false

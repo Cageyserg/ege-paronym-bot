@@ -11,6 +11,9 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
+# URL для вебхука (для Render)
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://your-app.onrender.com")
+
 # Пути к файлам
 DATA_FILE = "data/paronyms.json"
 STATS_FILE = "data/user_stats.json"
