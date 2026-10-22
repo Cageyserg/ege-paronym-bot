@@ -75,9 +75,6 @@ def handle_training_answer(message, bot):
     question = current_questions[user_id]
     is_correct = answer.lower() == question['correct'].lower()
     
-    # Сбрасываем состояние
-    user_states[user_id] = None
-    
     # Обновляем статистику
     paronym_id = question.get('paronym_id')
     word = question.get('correct') if is_correct else None
@@ -102,8 +99,47 @@ def handle_training_answer(message, bot):
             f"• {question['words'][1]}: {question['definitions'][question['words'][1]]}"
         )
     
-    bot.send_message(
-        message.chat.id,
-        response_text,
-        reply_markup=get_back_to_menu_keyboard()
-    )
+    # Редактируем предыдущее сообщение с результатом
+    try:
+        bot.edit_message_text(
+            message.chat.id,
+            message.message_id,
+            response_text,
+            reply_markup=get_back_to_menu_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при редактировании сообщения: {e}")
+        # Если редактирование не удалось, отправляем новое сообщение
+        bot.send_message(
+            message.chat.id,
+            response_text,
+            reply_markup=get_back_to_menu_keyboard()
+        )
+    
+    # Получаем новый вопрос
+    new_question = data_manager.get_random_question()
+    
+    if new_question:
+        # Сохраняем новый вопрос
+        current_questions[user_id] = new_question
+        # Устанавливаем состояние ожидания ответа
+        user_states[user_id] = "waiting_for_answer"
+        
+        # Отправляем новое сообщение с новым вопросом
+        bot.send_message(
+            message.chat.id,
+            f"📚 Следующий вопрос\n\n"
+            f"Вставьте правильное слово:\n\n"
+            f"{new_question['sentence']}\n\n"
+            f"💡 Варианты: {', '.join(new_question['words'])}\n\n"
+            f"📝 Введите слово:",
+            reply_markup=get_back_to_menu_keyboard()
+        )
+    else:
+        # Если нет больше вопросов
+        user_states[user_id] = None
+        bot.send_message(
+            message.chat.id,
+            "🎉 Вы прошли все доступные вопросы!",
+            reply_markup=get_main_menu_keyboard()
+        )
