@@ -6,7 +6,7 @@
 
 import telebot
 from config import BOT_TOKEN
-from handlers.start import cmd_start
+from handlers.start import cmd_start, cmd_top, cmd_count
 from handlers.callbacks import (
     show_main_menu, start_training, handle_answer,
     show_stats, show_leaderboard
@@ -16,10 +16,18 @@ from handlers.text_handler import handle_text_check
 # Создаём экземпляр бота
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Регистрируем обработчики
+# Регистрируем обработчики команд
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     cmd_start(message, bot)
+
+@bot.message_handler(commands=['top'])
+def top_handler(message):
+    cmd_top(message, bot)
+
+@bot.message_handler(commands=['count'])
+def count_handler(message):
+    cmd_count(message, bot)
 
 # Обработчик текстовых сообщений (проверка текста и тренировка)
 @bot.message_handler(func=lambda message: True, content_types=['text'])

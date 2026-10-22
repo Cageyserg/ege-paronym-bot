@@ -141,7 +141,7 @@ def show_stats(call, bot):
 
 def show_leaderboard(call, bot):
     """Показывает таблицу лидеров."""
-    leaderboard = data_manager.get_leaderboard(limit=10)
+    leaderboard = data_manager.get_leaderboard(limit=20)
     
     if not leaderboard:
         try:
