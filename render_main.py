@@ -86,12 +86,20 @@ def leaderboard_handler(call):
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Обработчик вебхуков от Telegram."""
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return ''
-    return 'Bad Request', 400
+    try:
+        if request.headers.get('content-type') == 'application/json':
+            json_string = request.get_data().decode('utf-8')
+            logger.info(f"Получен webhook: {json_string[:200]}...")
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+            logger.info("Webhook обработан успешно")
+            return '', 200
+        else:
+            logger.warning(f"Неправильный content-type: {request.headers.get('content-type')}")
+            return 'Bad Request', 400
+    except Exception as e:
+        logger.error(f"Ошибка при обработке webhook: {e}", exc_info=True)
+        return 'Internal Server Error', 500
 
 
 @app.route('/')
@@ -115,10 +123,17 @@ if __name__ == '__main__':
     
     # Устанавливаем вебхук при запуске
     logger.info("Запуск бота в режиме webhook...")
+    logger.info(f"BOT_TOKEN: {BOT_TOKEN[:10]}...")
+    logger.info(f"WEBHOOK_URL: {WEBHOOK_URL}")
+    
     webhook_url = f"{WEBHOOK_URL}/webhook"
-    bot.remove_webhook()
-    bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook установлен на {webhook_url}")
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url=webhook_url)
+        logger.info(f"Webhook установлен на {webhook_url}")
+    except Exception as e:
+        logger.error(f"Ошибка при установке webhook: {e}", exc_info=True)
     
     # Запускаем Flask приложение
+    logger.info(f"Запуск Flask на порту {port}")
     app.run(host='0.0.0.0', port=port)
