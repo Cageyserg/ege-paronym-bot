@@ -69,12 +69,10 @@ def handle_answer(call, bot):
     data_manager.update_user_stats(user_id, is_correct, username, question_id, word)
     
     if is_correct:
-        solved_count = data_manager.get_user_solved_words_count(user_id)
         response_text = (
             f"✅ Правильно!\n\n"
             f"Ответ: {question['correct']}\n"
-            f"{question['explanation']}\n\n"
-            f"📚 Вы освоили {solved_count} слов!"
+            f"{question['explanation']}"
         )
     else:
         response_text = (
@@ -125,7 +123,6 @@ def show_stats(call, bot):
     user_id = call.from_user.id
     username = call.from_user.username
     stats = data_manager.get_user_stats(user_id, username)
-    solved_count = data_manager.get_user_solved_words_count(user_id)
     
     correct = stats['correct_answers']
     streak = stats['streak']
@@ -133,7 +130,6 @@ def show_stats(call, bot):
     
     text = (
         f"Ваша статистика\n\n"
-        f"Освоено слов: {solved_count}\n\n"
         f"Правильных ответов: {correct}\n\n"
         f"Текущая серия: {streak}\n"
         f"Лучшая серия: {max_streak}"
