@@ -278,7 +278,7 @@ class MongoDB:
                 "username": stats.get("username") or f"User {stats['user_id']}",
                 "correct_answers": correct,
                 "total_answers": correct,  # Для совместимости
-                "percentage": 100.0, 100%, так как только правильные
+                "percentage": 100.0,  # 100%, так как только правильные
                 "max_streak": stats.get("max_streak", 0)
             })
         return result
