@@ -5,11 +5,9 @@
 
 import os
 from typing import Dict, List, Any, Optional
-from config import MONGODB_URI
+from config import USE_MONGODB, MONGODB_URI
 
-# Проверяем, используем ли MongoDB или SQLite
-USE_MONGODB = os.getenv("USE_MONGODB", "true").lower() == "true"
-
+# Импортируем нужный класс базы данных
 if USE_MONGODB:
     from utils.mongodb import MongoDB
     DatabaseClass = MongoDB
