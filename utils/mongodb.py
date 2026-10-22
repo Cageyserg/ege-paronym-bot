@@ -141,10 +141,13 @@ class MongoDB:
         import random
         
         # Получаем случайный вопрос
-        question = self.questions_collection.aggregate([{"$sample": {"size": 1}}]).next()
+        pipeline = [{"$sample": {"size": 1}}]
+        questions = list(self.questions_collection.aggregate(pipeline))
         
-        if not question:
+        if not questions:
             return None
+        
+        question = questions[0]
         
         # Получаем связанный пароним
         paronym = self.paronyms_collection.find_one({"id": question["paronym_id"]})
@@ -278,10 +281,7 @@ class MongoDB:
         """Возвращает таблицу лидеров."""
         leaderboard = list(self.stats_collection.find(
             {"total_answers": {"$gt": 0}}
-        ).sort([
-            ("correct_answers", -1),
-            ("max_streak", -1)
-        ).limit(limit))
+        ).sort([("correct_answers", -1), ("max_streak", -1)]).limit(limit))
         
         result = []
         for idx, stats in enumerate(leaderboard, 1):
