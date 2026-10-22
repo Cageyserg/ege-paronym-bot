@@ -10,7 +10,7 @@ import telebot
 from config import BOT_TOKEN, WEBHOOK_URL
 from handlers.start import cmd_start
 from handlers.callbacks import (
-    show_main_menu, start_training,
+    show_main_menu, start_training, handle_answer,
     show_stats, show_leaderboard
 )
 from handlers.text_handler import handle_text_check
@@ -48,6 +48,10 @@ def main_menu_handler(call):
 @bot.callback_query_handler(func=lambda call: call.data == "training_start")
 def training_start_handler(call):
     start_training(call, bot)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("answer_"))
+def answer_handler(call):
+    handle_answer(call, bot)
 
 @bot.callback_query_handler(func=lambda call: call.data == "stats")
 def stats_handler(call):

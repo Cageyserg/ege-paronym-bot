@@ -9,20 +9,22 @@ def get_main_menu_keyboard():
     """Создаёт главное меню бота."""
     keyboard = InlineKeyboardMarkup()
     keyboard.row(
-        InlineKeyboardButton(text="📚 Тренировка", callback_data="training_start")
+        InlineKeyboardButton(text="Тренировка", callback_data="training_start")
     )
     keyboard.row(
-        InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
-        InlineKeyboardButton(text="🏆 Таблица лидеров", callback_data="leaderboard")
+        InlineKeyboardButton(text="Статистика", callback_data="stats"),
+        InlineKeyboardButton(text="Таблица лидеров", callback_data="leaderboard")
     )
     return keyboard
 
 
 def get_training_answer_keyboard(words):
-    """Создаёт клавиатуру для тренировки (без кнопок выбора ответа)."""
+    """Создаёт клавиатуру с вариантами ответов для тренировки."""
     keyboard = InlineKeyboardMarkup()
-    # Кнопка для возврата в меню
-    keyboard.row(InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu"))
+    for word in words:
+        keyboard.row(InlineKeyboardButton(text=word, callback_data=f"answer_{word}"))
+    
+    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
     
     return keyboard
 
@@ -30,7 +32,7 @@ def get_training_answer_keyboard(words):
 def get_back_to_menu_keyboard():
     """Создаёт клавиатуру с кнопкой возврата в меню."""
     keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu"))
+    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
     return keyboard
 
 
@@ -57,6 +59,6 @@ def get_dictionary_navigation_keyboard(current_index, total):
 def get_leaderboard_keyboard():
     """Создаёт клавиатуру для таблицы лидеров."""
     keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton(text="🔄 Обновить", callback_data="leaderboard"))
-    keyboard.row(InlineKeyboardButton(text="🏠 В меню", callback_data="main_menu"))
+    keyboard.row(InlineKeyboardButton(text="Обновить", callback_data="leaderboard"))
+    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
     return keyboard
