@@ -3,15 +3,29 @@
 Отвечает за загрузку и сохранение данных через базу данных.
 """
 
+import os
 from typing import Dict, List, Any, Optional
-from utils.database import Database
+from config import MONGODB_URI
+
+# Проверяем, используем ли MongoDB или SQLite
+USE_MONGODB = os.getenv("USE_MONGODB", "true").lower() == "true"
+
+if USE_MONGODB:
+    from utils.mongodb import MongoDB
+    DatabaseClass = MongoDB
+else:
+    from utils.database import Database
+    DatabaseClass = Database
 
 
 class DataManager:
     """Класс для управления данными паронимов и статистикой пользователей."""
     
     def __init__(self):
-        self.db = Database()
+        if USE_MONGODB:
+            self.db = MongoDB(MONGODB_URI)
+        else:
+            self.db = Database()
     
     def get_all_paronyms(self) -> List[Dict[str, Any]]:
         """Возвращает список всех паронимов."""
