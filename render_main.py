@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Создаём экземпляр бота
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
 # Регистрируем обработчики
 @bot.message_handler(commands=['start'])
