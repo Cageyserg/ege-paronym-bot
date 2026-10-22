@@ -6,7 +6,6 @@ from keyboards.inline import (
     get_main_menu_keyboard,
     get_training_answer_keyboard,
     get_back_to_menu_keyboard,
-    get_dictionary_navigation_keyboard,
     get_leaderboard_keyboard
 )
 from utils.data_manager import DataManager
@@ -70,59 +69,6 @@ def next_question(call, bot):
     bot.answer_callback_query(call.id, "Начните тренировку заново для нового вопроса", show_alert=True)
 
 
-def show_dictionary(call, bot):
-    """Показывает первую страницу словаря."""
-    paronyms = data_manager.get_all_paronyms()
-    
-    if not paronyms:
-        bot.answer_callback_query(call.id, "Словарь пуст!", show_alert=True)
-        return
-    
-    show_paronym_page(call, bot, 0)
-
-
-def dict_prev_page(call, bot):
-    """Показывает предыдущую страницу словаря."""
-    current_index = int(call.data.split("_")[2])
-    show_paronym_page(call, bot, current_index - 1)
-
-
-def dict_next_page(call, bot):
-    """Показывает следующую страницу словаря."""
-    current_index = int(call.data.split("_")[2])
-    show_paronym_page(call, bot, current_index + 1)
-
-
-def show_paronym_page(call, bot, index):
-    """Показывает страницу словаря с указанным индексом."""
-    paronyms = data_manager.get_all_paronyms()
-    
-    if index < 0 or index >= len(paronyms):
-        bot.answer_callback_query(call.id, "Некорректный индекс", show_alert=True)
-        return
-    
-    paronym = paronyms[index]
-    words = paronym['words']
-    
-    text = (
-        f"📖 Словарь паронимов\n\n"
-        f"Пара: {words[0]} — {words[1]}\n\n"
-        f"Значения:\n"
-        f"• {words[0]}: {paronym['definitions'][words[0]]}\n"
-        f"• {words[1]}: {paronym['definitions'][words[1]]}\n\n"
-        f"Примеры:\n"
-        f"• {words[0]}: {paronym['examples'][words[0]]}\n"
-        f"• {words[1]}: {paronym['examples'][words[1]]}"
-    )
-    
-    bot.edit_message_text(
-        text,
-        call.message.chat.id,
-        call.message.message_id,
-        reply_markup=get_dictionary_navigation_keyboard(index, len(paronyms))
-    )
-
-
 def show_stats(call, bot):
     """Показывает статистику пользователя."""
     user_id = call.from_user.id
@@ -144,19 +90,6 @@ def show_stats(call, bot):
     
     bot.edit_message_text(
         text,
-        call.message.chat.id,
-        call.message.message_id,
-        reply_markup=get_back_to_menu_keyboard()
-    )
-
-
-def show_check_text_instruction(call, bot):
-    """Показывает инструкцию для проверки текста."""
-    bot.edit_message_text(
-        "🔍 Проверка текста\n\n"
-        "Отправьте мне предложение с пропуском (используйте _____ для пропуска), "
-        "и я проверю, какой пароним нужно вставить.\n\n"
-        "Пример: Я _____ пальто и вышел на улицу.",
         call.message.chat.id,
         call.message.message_id,
         reply_markup=get_back_to_menu_keyboard()
@@ -188,11 +121,7 @@ def show_leaderboard(call, bot):
     text = "🏆 Таблица лидеров\n\n"
     for entry in leaderboard:
         username = entry['username'] or f"User {entry['user_id']}"
-        text += (
-            f"{entry['rank']}. {username}\n"
-            f"   ✅ {entry['correct_answers']} правильных\n"
-            f"   🔥 Лучшая серия: {entry['max_streak']}\n\n"
-        )
+        text += f"{entry['rank']}. {username} — {entry['correct_answers']} правильных\n"
     
     try:
         bot.edit_message_text(

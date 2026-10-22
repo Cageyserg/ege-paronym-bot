@@ -9,15 +9,11 @@ def get_main_menu_keyboard():
     """Создаёт главное меню бота."""
     keyboard = InlineKeyboardMarkup()
     keyboard.row(
-        InlineKeyboardButton(text="📚 Тренировка", callback_data="training_start"),
-        InlineKeyboardButton(text="📖 Словарь", callback_data="dictionary")
+        InlineKeyboardButton(text="📚 Тренировка", callback_data="training_start")
     )
     keyboard.row(
-        InlineKeyboardButton(text="🔍 Проверить текст", callback_data="check_text")
-    )
-    keyboard.row(
-        InlineKeyboardButton(text="🏆 Таблица лидеров", callback_data="leaderboard"),
-        InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
+        InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
+        InlineKeyboardButton(text="🏆 Таблица лидеров", callback_data="leaderboard")
     )
     return keyboard
 
