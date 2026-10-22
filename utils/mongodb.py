@@ -187,7 +187,7 @@ class MongoDB:
         """Возвращает таблицу лидеров."""
         leaderboard = list(self.stats_collection.find(
             {"correct_answers": {"$gt": 0}}
-        ).sort([("correct_answers", -1), ("max_streak", -1)]).limit(limit))
+        ).sort([("correct_answers", -1)]).limit(limit))
         
         result = []
         for idx, stats in enumerate(leaderboard, 1):
@@ -199,7 +199,7 @@ class MongoDB:
                 "correct_answers": correct,
                 "total_answers": correct,
                 "percentage": 100.0,
-                "max_streak": stats.get("max_streak", 0)
+                "max_streak": 0
             })
         return result
     

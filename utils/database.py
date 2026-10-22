@@ -219,10 +219,10 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT user_id, username, correct_answers, max_streak
+                SELECT user_id, username, correct_answers
                 FROM user_stats
                 WHERE correct_answers > 0
-                ORDER BY correct_answers DESC, max_streak DESC
+                ORDER BY correct_answers DESC
                 LIMIT ?
             """, (limit,))
             rows = cursor.fetchall()
@@ -236,7 +236,7 @@ class Database:
                     "correct_answers": row["correct_answers"],
                     "total_answers": row["correct_answers"],
                     "percentage": 100.0,
-                    "max_streak": row["max_streak"]
+                    "max_streak": 0
                 })
             return result
     

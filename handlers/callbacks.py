@@ -125,14 +125,10 @@ def show_stats(call, bot):
     stats = data_manager.get_user_stats(user_id, username)
     
     correct = stats['correct_answers']
-    streak = stats['streak']
-    max_streak = stats['max_streak']
     
     text = (
         f"Ваша статистика\n\n"
-        f"Правильных ответов: {correct}\n\n"
-        f"Текущая серия: {streak}\n"
-        f"Лучшая серия: {max_streak}"
+        f"Правильных ответов: {correct}"
     )
     
     bot.edit_message_text(
@@ -168,7 +164,7 @@ def show_leaderboard(call, bot):
     text = "Таблица лидеров\n\n"
     for entry in leaderboard:
         username = entry['username'] or f"User {entry['user_id']}"
-        text += f"{entry['rank']}. {username} — {entry['correct_answers']} правильных\n"
+        text += f"{entry['rank']}. {username} — {entry['correct_answers']}\n"
     
     try:
         bot.edit_message_text(
