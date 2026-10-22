@@ -130,24 +130,14 @@ def show_stats(call, bot):
     stats = data_manager.get_user_stats(user_id, username)
     solved_count = data_manager.get_user_solved_words_count(user_id)
     
-    total = stats['total_answers']
     correct = stats['correct_answers']
-    incorrect = stats['incorrect_answers']
     streak = stats['streak']
     max_streak = stats['max_streak']
-    
-    if total == 0:
-        percentage = 0
-    else:
-        percentage = round((correct / total) * 100, 1)
     
     text = (
         f"📊 Ваша статистика\n\n"
         f"📚 Освоено слов: {solved_count}\n\n"
-        f"Всего ответов: {total}\n"
-        f"Правильных: {correct}\n"
-        f"Неправильных: {incorrect}\n"
-        f"Процент правильных: {percentage}%\n\n"
+        f"✅ Правильных ответов: {correct}\n\n"
         f"🔥 Текущая серия: {streak}\n"
         f"🏆 Лучшая серия: {max_streak}"
     )
@@ -187,7 +177,6 @@ def show_leaderboard(call, bot):
                 reply_markup=get_leaderboard_keyboard()
             )
         except Exception as e:
-            # Если редактирование не удалось, отправляем новое сообщение
             bot.send_message(
                 call.message.chat.id,
                 "🏆 Таблица лидеров\n\n"
@@ -201,7 +190,7 @@ def show_leaderboard(call, bot):
         username = entry['username'] or f"User {entry['user_id']}"
         text += (
             f"{entry['rank']}. {username}\n"
-            f"   ✅ {entry['correct_answers']} правильных ({entry['percentage']}%)\n"
+            f"   ✅ {entry['correct_answers']} правильных\n"
             f"   🔥 Лучшая серия: {entry['max_streak']}\n\n"
         )
     
@@ -213,7 +202,6 @@ def show_leaderboard(call, bot):
             reply_markup=get_leaderboard_keyboard()
         )
     except Exception as e:
-        # Если редактирование не удалось, отправляем новое сообщение
         bot.send_message(
             call.message.chat.id,
             text,

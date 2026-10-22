@@ -198,17 +198,13 @@ class MongoDB:
             new_stats = {
                 "user_id": user_id,
                 "username": username or "Anonymous",
-                "total_answers": 0,
                 "correct_answers": 0,
-                "incorrect_answers": 0,
                 "streak": 0,
                 "max_streak": 0
             }
             self.stats_collection.insert_one(new_stats)
             return {
-                "total_answers": 0,
                 "correct_answers": 0,
-                "incorrect_answers": 0,
                 "streak": 0,
                 "max_streak": 0
             }
@@ -221,9 +217,7 @@ class MongoDB:
             )
         
         return {
-            "total_answers": stats.get("total_answers", 0),
             "correct_answers": stats.get("correct_answers", 0),
-            "incorrect_answers": stats.get("incorrect_answers", 0),
             "streak": stats.get("streak", 0),
             "max_streak": stats.get("max_streak", 0)
         }
@@ -232,17 +226,14 @@ class MongoDB:
         """Обновляет статистику пользователя."""
         if is_correct:
             # Увеличиваем счётчики
-            stats = self.stats_collection.find_one({"user_id": user_id})
+            stats = self.stats_collection.find_one({"user_id": user_id}) or {}
             new_streak = stats.get("streak", 0) + 1
             new_max_streak = max(stats.get("max_streak", 0), new_streak)
             
             self.stats_collection.update_one(
                 {"user_id": user_id},
                 {
-                    "$inc": {
-                        "total_answers": 1,
-                        "correct_answers": 1
-                    },
+                    "$inc": {"correct_answers": 1},
                     "$set": {
                         "streak": new_streak,
                         "max_streak": new_max_streak
@@ -258,16 +249,10 @@ class MongoDB:
                     upsert=True
                 )
         else:
-            # Неправильный ответ - сбрасываем серию
+            # Неправильный ответ - только сбрасываем серию
             self.stats_collection.update_one(
                 {"user_id": user_id},
-                {
-                    "$inc": {
-                        "total_answers": 1,
-                        "incorrect_answers": 1
-                    },
-                    "$set": {"streak": 0}
-                }
+                {"$set": {"streak": 0}}
             )
         
         # Обновляем username
@@ -280,22 +265,20 @@ class MongoDB:
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Возвращает таблицу лидеров."""
         leaderboard = list(self.stats_collection.find(
-            {"total_answers": {"$gt": 0}}
+            {"correct_answers": {"$gt": 0}}
         ).sort([("correct_answers", -1), ("max_streak", -1)]).limit(limit))
         
         result = []
         for idx, stats in enumerate(leaderboard, 1):
-            total = stats.get("total_answers", 0)
             correct = stats.get("correct_answers", 0)
-            percentage = round((correct / total) * 100, 1) if total > 0 else 0
             
             result.append({
                 "rank": idx,
                 "user_id": stats["user_id"],
                 "username": stats.get("username") or f"User {stats['user_id']}",
                 "correct_answers": correct,
-                "total_answers": total,
-                "percentage": percentage,
+                "total_answers": correct,  # Для совместимости
+                "percentage": 100.0, 100%, так как только правильные
                 "max_streak": stats.get("max_streak", 0)
             })
         return result

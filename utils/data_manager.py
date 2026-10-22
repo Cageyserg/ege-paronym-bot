@@ -24,10 +24,16 @@ class DataManager:
             self.db = MongoDB(MONGODB_URI)
         else:
             self.db = Database()
+        
+        # Кэшируем паронимы в памяти для скорости
+        self._paronyms_cache = None
+        self._questions_cache = None
     
     def get_all_paronyms(self) -> List[Dict[str, Any]]:
-        """Возвращает список всех паронимов."""
-        return self.db.get_all_paronyms()
+        """Возвращает список всех паронимов (с кэшированием)."""
+        if self._paronyms_cache is None:
+            self._paronyms_cache = self.db.get_all_paronyms()
+        return self._paronyms_cache
     
     def get_paronym_by_id(self, paronym_id: int) -> Optional[Dict[str, Any]]:
         """Возвращает данные паронима по его ID."""
@@ -38,8 +44,20 @@ class DataManager:
         return self.db.get_random_question()
     
     def find_paronym_in_text(self, text: str) -> Optional[Dict[str, Any]]:
-        """Ищет пароним в тексте и возвращает информацию о нём."""
-        return self.db.find_paronym_in_text(text)
+        """Ищет пароним в тексте и возвращает информацию о нём (с кэшированием)."""
+        paronyms = self.get_all_paronyms()
+        text_lower = text.lower()
+        
+        for p in paronyms:
+            words = p["words"]
+            if words[0].lower() in text_lower or words[1].lower() in text_lower:
+                return {
+                    "words": words,
+                    "definitions": p["definitions"],
+                    "examples": p["examples"]
+                }
+        
+        return None
     
     def get_user_stats(self, user_id: int, username: str = None) -> Dict[str, int]:
         """Возвращает статистику пользователя."""

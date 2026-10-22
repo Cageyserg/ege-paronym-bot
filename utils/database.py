@@ -62,9 +62,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS user_stats (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
-                    total_answers INTEGER DEFAULT 0,
                     correct_answers INTEGER DEFAULT 0,
-                    incorrect_answers INTEGER DEFAULT 0,
                     streak INTEGER DEFAULT 0,
                     max_streak INTEGER DEFAULT 0
                 )
@@ -246,9 +244,7 @@ class Database:
                 """, (user_id, username or "Anonymous"))
                 conn.commit()
                 return {
-                    "total_answers": 0,
                     "correct_answers": 0,
-                    "incorrect_answers": 0,
                     "streak": 0,
                     "max_streak": 0
                 }
@@ -262,9 +258,7 @@ class Database:
                 conn.commit()
             
             return {
-                "total_answers": row["total_answers"],
                 "correct_answers": row["correct_answers"],
-                "incorrect_answers": row["incorrect_answers"],
                 "streak": row["streak"],
                 "max_streak": row["max_streak"]
             }
@@ -277,8 +271,7 @@ class Database:
             if is_correct:
                 cursor.execute("""
                     UPDATE user_stats 
-                    SET total_answers = total_answers + 1,
-                        correct_answers = correct_answers + 1,
+                    SET correct_answers = correct_answers + 1,
                         streak = streak + 1,
                         max_streak = MAX(max_streak, streak + 1)
                     WHERE user_id = ?
@@ -291,11 +284,10 @@ class Database:
                         VALUES (?, ?, ?)
                     """, (user_id, paronym_id, word))
             else:
+                # Неправильный ответ - только сбрасываем серию
                 cursor.execute("""
                     UPDATE user_stats 
-                    SET total_answers = total_answers + 1,
-                        incorrect_answers = incorrect_answers + 1,
-                        streak = 0
+                    SET streak = 0
                     WHERE user_id = ?
                 """, (user_id,))
             
@@ -312,9 +304,9 @@ class Database:
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT user_id, username, correct_answers, total_answers, max_streak
+                SELECT user_id, username, correct_answers, max_streak
                 FROM user_stats
-                WHERE total_answers > 0
+                WHERE correct_answers > 0
                 ORDER BY correct_answers DESC, max_streak DESC
                 LIMIT ?
             """, (limit,))
@@ -322,14 +314,13 @@ class Database:
             
             result = []
             for idx, row in enumerate(rows, 1):
-                percentage = round((row["correct_answers"] / row["total_answers"]) * 100, 1) if row["total_answers"] > 0 else 0
                 result.append({
                     "rank": idx,
                     "user_id": row["user_id"],
                     "username": row["username"] or f"User {row['user_id']}",
                     "correct_answers": row["correct_answers"],
-                    "total_answers": row["total_answers"],
-                    "percentage": percentage,
+                    "total_answers": row["correct_answers"],
+                    "percentage": 100.0,
                     "max_streak": row["max_streak"]
                 })
             return result
@@ -340,9 +331,7 @@ class Database:
             cursor = conn.cursor()
             cursor.execute("""
                 UPDATE user_stats
-                SET total_answers = 0,
-                    correct_answers = 0,
-                    incorrect_answers = 0,
+                SET correct_answers = 0,
                     streak = 0,
                     max_streak = 0
                 WHERE user_id = ?
