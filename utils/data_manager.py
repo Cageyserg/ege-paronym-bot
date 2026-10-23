@@ -37,6 +37,9 @@ class DataManager:
             
             with open(data_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+                # Новый формат: список заданий без обёртки 'tasks'
+                if isinstance(data, list):
+                    return data
                 return data.get('tasks', [])
         except Exception as e:
             print(f"Ошибка загрузки заданий: {e}")
@@ -46,13 +49,18 @@ class DataManager:
         """Возвращает случайный вопрос из файла."""
         if not self.tasks:
             return None
-        
+
         task = random.choice(self.tasks)
+        # Перемешиваем варианты ответов случайным образом
+        import copy
+        shuffled_options = copy.copy(task['options'])
+        random.shuffle(shuffled_options)
+
         return {
             'id': task['id'],
-            'sentences': task['sentences'],
+            'task': task['task'],
+            'options': shuffled_options,
             'correct_answer': task['correct_answer'],
-            'wrong_word': task.get('wrong_word', ''),
             'explanation': task.get('explanation', '')
         }
     

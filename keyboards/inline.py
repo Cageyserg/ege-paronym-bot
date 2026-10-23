@@ -51,3 +51,13 @@ def get_leaderboard_keyboard():
     keyboard.row(InlineKeyboardButton(text="Обновить", callback_data="leaderboard"))
     keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
     return keyboard
+
+
+def get_answer_keyboard(options):
+    """Создаёт клавиатуру с вариантами ответов."""
+    keyboard = InlineKeyboardMarkup()
+    # Добавляем 3 варианта ответа
+    for option in options:
+        keyboard.row(InlineKeyboardButton(text=option, callback_data=f"answer_{option}"))
+    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
+    return keyboard

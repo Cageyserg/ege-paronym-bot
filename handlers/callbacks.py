@@ -2,10 +2,12 @@
 Обработчики callback-запросов (нажатия на инлайн-кнопки).
 """
 
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from keyboards.inline import (
     get_main_menu_keyboard,
     get_back_to_menu_keyboard,
-    get_leaderboard_keyboard
+    get_leaderboard_keyboard,
+    get_answer_keyboard
 )
 from utils.data_manager import DataManager
 from handlers.text_handler import current_questions
@@ -28,40 +30,79 @@ def start_training(call, bot):
     user_id = call.from_user.id
     username = call.from_user.username
     question = data_manager.get_random_question()
-    
+
     if not question:
         bot.answer_callback_query(call.id, "Нет доступных вопросов!", show_alert=True)
         return
-    
+
     # Сохраняем текущий вопрос для пользователя
     current_questions[user_id] = question
-    
-    # Формируем текст с 5 предложениями
-    sentences_text = ""
-    for i, sentence in enumerate(question['sentences'], 1):
-        sentences_text += f"{i}. {sentence}\n"
-    
+
     bot.edit_message_text(
-        f"📝 Задание 5 ЕГЭ\n\n"
-        f"В одном из предложений НЕВЕРНО употреблено выделенное слово.\n"
-        f"Исправьте ошибку и напишите правильное слово.\n\n"
-        f"{sentences_text}\n"
-        f"💡 Напишите правильное слово в чат",
+        f"📝 Выберите правильное слово\n\n"
+        f"{question['task']}\n\n"
+        f"💡 Выберите вариант ответа",
         call.message.chat.id,
         call.message.message_id,
-        reply_markup=get_back_to_menu_keyboard()
+        reply_markup=get_answer_keyboard(question['options'])
     )
 
 
 def handle_answer(call, bot):
-    """Обрабатывает ответ пользователя на вопрос (теперь не используется - ответ текстовый)."""
-    bot.answer_callback_query(call.id, "Напишите ответ текстом в чат", show_alert=True)
+    """Обрабатывает ответ пользователя на вопрос."""
+    user_id = call.from_user.id
+    username = call.from_user.username
+
+    # Извлекаем ответ из callback_data
+    user_answer = call.data.replace("answer_", "")
+
+    # Получаем текущий вопрос
+    if user_id not in current_questions:
+        bot.answer_callback_query(call.id, "Сначала начните тренировку!", show_alert=True)
+        return
+
+    question = current_questions[user_id]
+    correct_answer = question['correct_answer']
+    explanation = question['explanation']
+
+    # Проверяем ответ
+    is_correct = user_answer.lower() == correct_answer.lower()
+
+    # Обновляем статистику
+    data_manager.update_user_stats(user_id, is_correct, username, question['id'], correct_answer)
+
+    # Формируем ответ
+    if is_correct:
+        response_text = (
+            f"✅ Правильно!\n\n"
+            f"Правильный ответ: {correct_answer}\n\n"
+            f"📖 {explanation}"
+        )
+    else:
+        response_text = (
+            f"❌ Неправильно!\n\n"
+            f"Ваш ответ: {user_answer}\n"
+            f"Правильный ответ: {correct_answer}\n\n"
+            f"📖 {explanation}"
+        )
+
+    # Создаём клавиатуру с кнопками "Следующий вопрос" и "В меню"
+    keyboard = InlineKeyboardMarkup()
+    keyboard.row(InlineKeyboardButton(text="➡️ Следующий вопрос", callback_data="training_start"))
+    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
+
+    # Показываем результат и кнопки
+    bot.edit_message_text(
+        response_text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard
+    )
 
 
 def next_question(call, bot):
     """Показывает следующий вопрос."""
-    # Для текстового ввода next_question больше не нужен
-    bot.answer_callback_query(call.id, "Начните тренировку заново для нового вопроса", show_alert=True)
+    start_training(call, bot)
 
 
 def show_stats(call, bot):
