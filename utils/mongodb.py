@@ -5,10 +5,13 @@
 
 import os
 import random
+import logging
 from typing import Dict, List, Any, Optional
 from pymongo import MongoClient, ASCENDING
 from config import QUESTIONS_FILE, ANSWERS_FILE
 import json
+
+logger = logging.getLogger(__name__)
 
 
 class MongoDB:
@@ -17,21 +20,23 @@ class MongoDB:
     def __init__(self, mongo_uri: str = None):
         if mongo_uri is None:
             mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
-        
+
+        logger.info(f"Подключение к MongoDB: {mongo_uri[:20]}...")
         self.client = MongoClient(mongo_uri)
         self.db = self.client["ege_paronym_bot"]
-        
+
         # Коллекции
         self.questions_collection = self.db["questions"]
         self.answers_collection = self.db["answers"]
         self.stats_collection = self.db["user_stats"]
         self.solved_words_collection = self.db["user_solved_words"]
-        
+
         # Создаём индексы
         self._create_indexes()
-        
+
         # Загружаем вопросы и ответы из JSON
         self._load_data_from_json()
+        logger.info("MongoDB инициализирован успешно")
     
     def _create_indexes(self):
         """Создаёт индексы для оптимизации запросов."""
@@ -149,12 +154,13 @@ class MongoDB:
     
     def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, question_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
+        logger.info(f"MongoDB update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}")
         if is_correct:
             stats = self.stats_collection.find_one({"user_id": user_id}) or {}
             new_streak = stats.get("streak", 0) + 1
             new_max_streak = max(stats.get("max_streak", 0), new_streak)
-            
-            self.stats_collection.update_one(
+
+            result = self.stats_collection.update_one(
                 {"user_id": user_id},
                 {
                     "$inc": {"correct_answers": 1},
@@ -162,9 +168,11 @@ class MongoDB:
                         "streak": new_streak,
                         "max_streak": new_max_streak
                     }
-                }
+                },
+                upsert=True
             )
-            
+            logger.info(f"Update result: matched={result.matched_count}, modified={result.modified_count}, upserted_id={result.upserted_id}")
+
             if question_id and word:
                 self.solved_words_collection.update_one(
                     {"user_id": user_id, "question_id": question_id, "word": word},
@@ -172,23 +180,28 @@ class MongoDB:
                     upsert=True
                 )
         else:
-            self.stats_collection.update_one(
+            result = self.stats_collection.update_one(
                 {"user_id": user_id},
-                {"$set": {"streak": 0}}
+                {"$set": {"streak": 0}},
+                upsert=True
             )
-        
+            logger.info(f"Reset streak result: matched={result.matched_count}, modified={result.modified_count}")
+
         if username:
-            self.stats_collection.update_one(
+            result = self.stats_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {"username": username}}
             )
+            logger.info(f"Update username result: matched={result.matched_count}, modified={result.modified_count}")
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Возвращает таблицу лидеров."""
+        logger.info(f"Запрос leaderboard с limit={limit}")
         leaderboard = list(self.stats_collection.find(
             {"correct_answers": {"$gt": 0}}
         ).sort([("correct_answers", -1)]).limit(limit))
-        
+
+        logger.info(f"Найдено {len(leaderboard)} записей в leaderboard")
         result = []
         for idx, stats in enumerate(leaderboard, 1):
             correct = stats.get("correct_answers", 0)

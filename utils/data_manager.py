@@ -5,8 +5,11 @@
 import os
 import json
 import random
+import logging
 from typing import Dict, List, Any, Optional
 from config import USE_MONGODB, MONGODB_URI
+
+logger = logging.getLogger(__name__)
 
 # Импортируем нужный класс базы данных
 if USE_MONGODB:
@@ -21,13 +24,17 @@ class DataManager:
     """Класс для управления данными вопросов и статистикой пользователей."""
     
     def __init__(self):
+        logger.info(f"Инициализация DataManager. USE_MONGODB={USE_MONGODB}")
         if USE_MONGODB:
             self.db = MongoDB(MONGODB_URI)
+            logger.info("Используется MongoDB")
         else:
             self.db = Database()
+            logger.info("Используется SQLite")
         
         # Загружаем задания из JSON файла
         self.tasks = self._load_tasks()
+        logger.info(f"Загружено {len(self.tasks)} заданий")
     
     def _load_tasks(self) -> List[Dict[str, Any]]:
         """Загружает задания из paronyms.json."""
@@ -70,6 +77,7 @@ class DataManager:
     
     def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, question_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
+        logger.info(f"update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}, question_id={question_id}, word={word}")
         self.db.update_user_stats(user_id, is_correct, username, question_id, word)
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:

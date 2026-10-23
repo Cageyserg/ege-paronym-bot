@@ -70,43 +70,43 @@ def handle_answer(call, bot):
     # Обновляем статистику
     data_manager.update_user_stats(user_id, is_correct, username, question['id'], correct_answer)
 
-    # Формируем ответ для текущего сообщения
     if is_correct:
+        # При правильном ответе показываем объяснение и переходим к следующему вопросу
         response_text = (
             f"✅ Правильно!\n\n"
             f"Правильный ответ: {correct_answer}\n\n"
             f"📖 {explanation}"
         )
-    else:
-        response_text = (
-            f"❌ Неправильно!\n\n"
-            f"Ваш ответ: {user_answer}\n"
-            f"Правильный ответ: {correct_answer}\n\n"
-            f"📖 {explanation}"
+
+        # Изменяем текущее сообщение на результат
+        bot.edit_message_text(
+            response_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=get_back_to_menu_keyboard()
         )
 
-    # Изменяем текущее сообщение на результат
-    bot.edit_message_text(
-        response_text,
-        call.message.chat.id,
-        call.message.message_id,
-        reply_markup=get_back_to_menu_keyboard()
-    )
+        # Получаем следующий вопрос
+        next_question = data_manager.get_random_question()
 
-    # Получаем следующий вопрос
-    next_question = data_manager.get_random_question()
+        if next_question:
+            # Сохраняем новый вопрос
+            current_questions[user_id] = next_question
 
-    if next_question:
-        # Сохраняем новый вопрос
-        current_questions[user_id] = next_question
-
-        # Отправляем новое сообщение со следующим заданием
-        bot.send_message(
-            call.message.chat.id,
-            f"📝 Выберите правильное слово\n\n"
-            f"{next_question['task']}\n\n"
-            f"💡 Выберите вариант ответа",
-            reply_markup=get_answer_keyboard(next_question['options'])
+            # Отправляем новое сообщение со следующим заданием
+            bot.send_message(
+                call.message.chat.id,
+                f"📝 Выберите правильное слово\n\n"
+                f"{next_question['task']}\n\n"
+                f"💡 Выберите вариант ответа",
+                reply_markup=get_answer_keyboard(next_question['options'])
+            )
+    else:
+        # При неправильном ответе показываем плашку с ошибкой, но вопрос не меняем
+        bot.answer_callback_query(
+            call.id,
+            f"❌ Неправильно!\n\nПопробуйте ещё раз!",
+            show_alert=True
         )
 
 
