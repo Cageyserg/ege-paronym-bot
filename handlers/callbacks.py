@@ -2,7 +2,6 @@
 Обработчики callback-запросов (нажатия на инлайн-кнопки).
 """
 
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from keyboards.inline import (
     get_main_menu_keyboard,
     get_back_to_menu_keyboard,
@@ -71,7 +70,7 @@ def handle_answer(call, bot):
     # Обновляем статистику
     data_manager.update_user_stats(user_id, is_correct, username, question['id'], correct_answer)
 
-    # Формируем ответ
+    # Формируем ответ для текущего сообщения
     if is_correct:
         response_text = (
             f"✅ Правильно!\n\n"
@@ -86,23 +85,29 @@ def handle_answer(call, bot):
             f"📖 {explanation}"
         )
 
-    # Создаём клавиатуру с кнопками "Следующий вопрос" и "В меню"
-    keyboard = InlineKeyboardMarkup()
-    keyboard.row(InlineKeyboardButton(text="➡️ Следующий вопрос", callback_data="training_start"))
-    keyboard.row(InlineKeyboardButton(text="В меню", callback_data="main_menu"))
-
-    # Показываем результат и кнопки
+    # Изменяем текущее сообщение на результат
     bot.edit_message_text(
         response_text,
         call.message.chat.id,
         call.message.message_id,
-        reply_markup=keyboard
+        reply_markup=get_back_to_menu_keyboard()
     )
 
+    # Получаем следующий вопрос
+    next_question = data_manager.get_random_question()
 
-def next_question(call, bot):
-    """Показывает следующий вопрос."""
-    start_training(call, bot)
+    if next_question:
+        # Сохраняем новый вопрос
+        current_questions[user_id] = next_question
+
+        # Отправляем новое сообщение со следующим заданием
+        bot.send_message(
+            call.message.chat.id,
+            f"📝 Выберите правильное слово\n\n"
+            f"{next_question['task']}\n\n"
+            f"💡 Выберите вариант ответа",
+            reply_markup=get_answer_keyboard(next_question['options'])
+        )
 
 
 def show_stats(call, bot):
