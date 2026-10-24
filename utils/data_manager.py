@@ -71,14 +71,14 @@ class DataManager:
             'explanation': task.get('explanation', '')
         }
     
-    def get_user_stats(self, user_id: int, username: str = None) -> Dict[str, int]:
+    def get_user_stats(self, user_id: int, username: str = None, firstname: str = None) -> Dict[str, int]:
         """Возвращает статистику пользователя."""
-        return self.db.get_user_stats(user_id, username)
-    
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, question_id: int = None, word: str = None):
+        return self.db.get_user_stats(user_id, username, firstname)
+
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, firstname: str = None, question_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
-        logger.info(f"update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}, question_id={question_id}, word={word}")
-        self.db.update_user_stats(user_id, is_correct, username, question_id, word)
+        logger.info(f"update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}, firstname={firstname}, question_id={question_id}, word={word}")
+        self.db.update_user_stats(user_id, is_correct, username, firstname, question_id, word)
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Возвращает таблицу лидеров."""

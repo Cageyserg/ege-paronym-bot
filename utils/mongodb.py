@@ -121,40 +121,51 @@ class MongoDB:
             "words": all_words
         }
     
-    def get_user_stats(self, user_id: int, username: str = None) -> Dict[str, int]:
+    def get_user_stats(self, user_id: int, username: str = None, firstname: str = None) -> Dict[str, int]:
         """Возвращает статистику пользователя."""
         stats = self.stats_collection.find_one({"user_id": user_id})
-        
+
         if not stats:
             new_stats = {
                 "user_id": user_id,
                 "username": username or "Anonymous",
+                "firstname": firstname or "",
                 "correct_answers": 0,
                 "streak": 0,
                 "max_streak": 0
             }
             self.stats_collection.insert_one(new_stats)
             return {
+                "username": username or "Anonymous",
+                "firstname": firstname or "",
                 "correct_answers": 0,
                 "streak": 0,
                 "max_streak": 0
             }
-        
+
         if username and stats.get("username") != username:
             self.stats_collection.update_one(
                 {"user_id": user_id},
                 {"$set": {"username": username}}
             )
-        
+
+        if firstname and stats.get("firstname") != firstname:
+            self.stats_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"firstname": firstname}}
+            )
+
         return {
+            "username": stats.get("username") or "Anonymous",
+            "firstname": stats.get("firstname") or "",
             "correct_answers": stats.get("correct_answers", 0),
             "streak": stats.get("streak", 0),
             "max_streak": stats.get("max_streak", 0)
         }
     
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, question_id: int = None, word: str = None):
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, firstname: str = None, question_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
-        logger.info(f"MongoDB update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}")
+        logger.info(f"MongoDB update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}, firstname={firstname}")
         if is_correct:
             stats = self.stats_collection.find_one({"user_id": user_id}) or {}
             new_streak = stats.get("streak", 0) + 1
@@ -193,6 +204,13 @@ class MongoDB:
                 {"$set": {"username": username}}
             )
             logger.info(f"Update username result: matched={result.matched_count}, modified={result.modified_count}")
+
+        if firstname:
+            result = self.stats_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"firstname": firstname}}
+            )
+            logger.info(f"Update firstname result: matched={result.matched_count}, modified={result.modified_count}")
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Возвращает таблицу лидеров."""

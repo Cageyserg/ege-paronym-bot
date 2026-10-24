@@ -55,6 +55,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS user_stats (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
+                    firstname TEXT,
                     correct_answers INTEGER DEFAULT 0,
                     streak INTEGER DEFAULT 0,
                     max_streak INTEGER DEFAULT 0
@@ -144,7 +145,7 @@ class Database:
                 "words": all_words
             }
     
-    def get_user_stats(self, user_id: int, username: str = None) -> Dict[str, int]:
+    def get_user_stats(self, user_id: int, username: str = None, firstname: str = None) -> Dict[str, int]:
         """Возвращает статистику пользователя."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -153,11 +154,13 @@ class Database:
             
             if not row:
                 cursor.execute("""
-                    INSERT INTO user_stats (user_id, username)
-                    VALUES (?, ?)
-                """, (user_id, username or "Anonymous"))
+                    INSERT INTO user_stats (user_id, username, firstname)
+                    VALUES (?, ?, ?)
+                """, (user_id, username or "Anonymous", firstname or ""))
                 conn.commit()
                 return {
+                    "username": username or "Anonymous",
+                    "firstname": firstname or "",
                     "correct_answers": 0,
                     "streak": 0,
                     "max_streak": 0
@@ -170,30 +173,39 @@ class Database:
                 )
                 conn.commit()
             
+            if firstname and row["firstname"] != firstname:
+                cursor.execute(
+                    "UPDATE user_stats SET firstname = ? WHERE user_id = ?",
+                    (firstname, user_id)
+                )
+                conn.commit()
+            
             return {
+                "username": row["username"] or "Anonymous",
+                "firstname": row["firstname"] or "",
                 "correct_answers": row["correct_answers"],
                 "streak": row["streak"],
                 "max_streak": row["max_streak"]
             }
     
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, question_id: int = None, word: str = None):
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, firstname: str = None, question_id: int = None, word: str = None):
         """Обновляет статистику пользователя."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            
+
             if is_correct:
                 stats = cursor.execute("SELECT * FROM user_stats WHERE user_id = ?", (user_id,)).fetchone()
                 new_streak = (stats["streak"] if stats else 0) + 1
                 new_max_streak = max(stats["max_streak"] if stats else 0, new_streak)
-                
+
                 cursor.execute("""
-                    UPDATE user_stats 
+                    UPDATE user_stats
                     SET correct_answers = correct_answers + 1,
                         streak = ?,
                         max_streak = ?
                     WHERE user_id = ?
                 """, (new_streak, new_max_streak, user_id))
-                
+
                 if question_id and word:
                     cursor.execute("""
                         INSERT OR IGNORE INTO user_solved_words (user_id, question_id, word)
@@ -201,17 +213,23 @@ class Database:
                     """, (user_id, question_id, word))
             else:
                 cursor.execute("""
-                    UPDATE user_stats 
+                    UPDATE user_stats
                     SET streak = 0
                     WHERE user_id = ?
                 """, (user_id,))
-            
+
             if username:
                 cursor.execute(
                     "UPDATE user_stats SET username = ? WHERE user_id = ?",
                     (username, user_id)
                 )
-            
+
+            if firstname:
+                cursor.execute(
+                    "UPDATE user_stats SET firstname = ? WHERE user_id = ?",
+                    (firstname, user_id)
+                )
+
             conn.commit()
     
     def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
