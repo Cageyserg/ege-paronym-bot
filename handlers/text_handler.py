@@ -1,20 +1,21 @@
 """
 Обработчик текстовых сообщений для тренировки.
+Использует глобальный data_manager из utils.data_manager.
 """
 
 import logging
 from keyboards.inline import get_main_menu_keyboard
-from utils.data_manager import DataManager
+# Глобальный data_manager (инициализируется в main.py)
+from utils.data_manager import data_manager
 
-data_manager = DataManager()
 logger = logging.getLogger(__name__)
 
-# Хранилище текущих вопросов пользователей (импортируем из callbacks)
+# Хранилище текущих вопросов пользователей (chat_id -> question_dict)
 current_questions = {}
 
 
 def handle_text_check(message, bot):
-    """Обрабатывает текстовое сообщение - теперь не используется, ответы через кнопки."""
+    """Обрабатывает текстовое сообщение - не используется, ответы через кнопки."""
     bot.send_message(
         message.chat.id,
         "Пожалуйста, используйте кнопки для выбора ответа.",

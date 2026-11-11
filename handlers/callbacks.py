@@ -1,5 +1,6 @@
 """
 Обработчики callback-запросов (нажатия на инлайн-кнопки).
+Использует глобальный data_manager из utils.data_manager.
 """
 
 from keyboards.inline import (
@@ -8,13 +9,12 @@ from keyboards.inline import (
     get_leaderboard_keyboard,
     get_answer_keyboard
 )
-from utils.data_manager import DataManager
+# Глобальный data_manager с кэшированием и flush-циклом
+from utils.data_manager import data_manager
+# Хранилище текущих вопросов пользователей
 from handlers.text_handler import current_questions
 
-data_manager = DataManager()
-
 # Хранилище message_id для таблицы лидеров (chat_id -> message_id)
-# Общее для команд и callback handlers
 leaderboard_message_ids = {}
 
 
@@ -32,15 +32,13 @@ def show_main_menu(call, bot):
 def start_training(call, bot):
     """Начинает режим тренировки."""
     user_id = call.from_user.id
-    username = call.from_user.username
-    firstname = call.from_user.first_name
+    # Вопрос берётся из RAM (paronyms.json загружен при старте)
     question = data_manager.get_random_question()
 
     if not question:
         bot.answer_callback_query(call.id, "Нет доступных вопросов!", show_alert=True)
         return
 
-    # Сохраняем текущий вопрос для пользователя
     current_questions[user_id] = question
 
     bot.edit_message_text(
@@ -54,15 +52,17 @@ def start_training(call, bot):
 
 
 def handle_answer(call, bot):
-    """Обрабатывает ответ пользователя на вопрос."""
+    """Обрабатывает ответ пользователя.
+    
+    Статистика обновляется ТОЛЬКО В ПАМЯТИ (через StatsCache).
+    Запись в БД происходит батчами каждые 10 секунд.
+    """
     user_id = call.from_user.id
     username = call.from_user.username
     firstname = call.from_user.first_name
 
-    # Извлекаем ответ из callback_data
     user_answer = call.data.replace("answer_", "")
 
-    # Получаем текущий вопрос
     if user_id not in current_questions:
         bot.answer_callback_query(call.id, "Сначала начните тренировку!", show_alert=True)
         return
@@ -74,18 +74,16 @@ def handle_answer(call, bot):
     # Проверяем ответ
     is_correct = user_answer.lower() == correct_answer.lower()
 
-    # Обновляем статистику
+    # Обновляем статистику В ПАМЯТИ (без обращения к БД)
     data_manager.update_user_stats(user_id, is_correct, username, firstname, question['id'], correct_answer)
 
     if is_correct:
-        # При правильном ответе показываем объяснение и переходим к следующему вопросу
         response_text = (
             f"✅ Правильно!\n\n"
             f"Правильный ответ: *{correct_answer}*\n\n"
             f"📖 {explanation}"
         )
 
-        # Изменяем текущее сообщение на результат
         bot.edit_message_text(
             response_text,
             call.message.chat.id,
@@ -94,14 +92,10 @@ def handle_answer(call, bot):
             parse_mode='Markdown'
         )
 
-        # Получаем следующий вопрос
         next_question = data_manager.get_random_question()
 
         if next_question:
-            # Сохраняем новый вопрос
             current_questions[user_id] = next_question
-
-            # Отправляем новое сообщение со следующим заданием
             bot.send_message(
                 call.message.chat.id,
                 f"📝 Выберите правильное слово\n\n"
@@ -110,7 +104,6 @@ def handle_answer(call, bot):
                 reply_markup=get_answer_keyboard(next_question['options'])
             )
     else:
-        # При неправильном ответе показываем плашку с ошибкой, но вопрос не меняем
         bot.answer_callback_query(
             call.id,
             f"❌ Неправильно!\n\nПопробуйте ещё раз!",
@@ -119,7 +112,7 @@ def handle_answer(call, bot):
 
 
 def show_stats(call, bot):
-    """Показывает статистику пользователя."""
+    """Показывает статистику пользователя из кэша."""
     user_id = call.from_user.id
     username = call.from_user.username
     firstname = call.from_user.first_name
@@ -150,16 +143,15 @@ def show_stats(call, bot):
 
 
 def show_leaderboard(call, bot):
-    """Показывает таблицу лидеров."""
+    """Показывает таблицу лидеров из кэша."""
     chat_id = call.message.chat.id
     leaderboard = data_manager.get_leaderboard(limit=20)
 
-    # Удаляем старое сообщение таблицы лидеров, если оно есть
     if chat_id in leaderboard_message_ids:
         try:
             bot.delete_message(chat_id, leaderboard_message_ids[chat_id])
         except Exception as e:
-            pass  # Сообщение уже удалено или недоступно
+            pass
         del leaderboard_message_ids[chat_id]
 
     if not leaderboard:

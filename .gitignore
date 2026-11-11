@@ -41,5 +41,7 @@ Thumbs.db
 # Data files (statistics and database)
 data/user_stats.json
 data/*.db
+data/*.db-wal
+data/*.db-shm
 data/*.sqlite
 data/*.sqlite3

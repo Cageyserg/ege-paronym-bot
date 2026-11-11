@@ -1,93 +1,343 @@
 """
-Модуль для работы с данными вопросов и ответов.
+Управление данными и статистикой пользователей.
+Использует SQLite для персистентности + in-memory кэш (StatsCache).
+
+Архитектура:
+- StatsCache — кэш в RAM с RLock, flush-поток каждые 10 сек, батч-запись в SQLite.
+- DataManager — обёртка над StatsCache + загрузка вопросов из паронимов.json.
 """
 
-import os
 import json
+import os
 import random
+import copy
 import logging
-from typing import Dict, List, Any, Optional
-from config import USE_MONGODB, MONGODB_URI
+import sqlite3
+import threading
+from typing import Dict, List, Optional, Any
+
+# MongoDB removed; no longer needed
 
 logger = logging.getLogger(__name__)
 
-# Импортируем нужный класс базы данных
-if USE_MONGODB:
-    from utils.mongodb import MongoDB
-    DatabaseClass = MongoDB
-else:
-    from utils.database import Database
-    DatabaseClass = Database
 
+# ===================== StatsCache =====================
+class StatsCache:
+    """In-memory cache для user_stats. Все мутации — под RLock. Flush в БД каждые 10 сек."""
+
+    def __init__(self):
+        self._db = None
+        self._cache: Dict[int, dict] = {}
+        self._dirty: set = set()
+        self._lock = threading.RLock()
+        self._stop_event = threading.Event()
+        self._flush_thread = None
+        self._loaded = False
+
+    # ===================== LIFE CYCLE =====================
+
+    def attach_db(self, db):
+        """Подключает БД к существующему кэшу. При смене БД — сброс старого кэша."""
+        with self._lock:
+            if self._db is not None and self._db is not db:
+                logger.warning("StatsCache: заменяем БД, сначала flush старой...")
+                # Флешим всё из старой БД перед переключением
+                try:
+                    dirty_snapshot = list(self._dirty)
+                    old_db = self._db
+                    # Очищаем кэш и пересоздаём dirty записи
+                    self._cache.clear()
+                    self._dirty.clear()
+                    self._loaded = False
+                    for uid in dirty_snapshot:
+                        s = self._cache[uid] if uid in self._cache else {
+                            "_uid": uid, "username": "", "firstname": "",
+                            "correct_answers": 0, "streak": 0, "max_streak": 0
+                        }
+                    # Записываем обратно во внешнюю транзакцию (вне нашего лока)
+                    old_db.batch_update_user_stats([
+                        (uid, s["username"], s["firstname"],
+                         s["correct_answers"], s["streak"], s["max_streak"])
+                        for uid, s in self._cache.items()
+                    ])
+                except Exception as e:
+                    logger.error(f"Warning flushing old DB before switch: {e}", exc_info=True)
+            self._db = db
+
+    def load_all_from_db(self):
+        """Загружает ВСЮ таблицу user_stats из SQLite в кэш при старте."""
+        if self._loaded:
+            return
+        with self._lock:
+            if self._loaded:
+                return
+            logger.info("StatsCache: загрузка статистики пользователей из SQLite...")
+            rows = self._db.get_all_user_stats()
+            for row in rows:
+                uid = row["user_id"]
+                self._cache[uid] = {
+                    "_uid": uid,
+                    "username": row.get("username") or "Anonymous",
+                    "firstname": row.get("firstname") or "",
+                    "correct_answers": row.get("correct_answers", 0),
+                    "streak": row.get("streak", 0),
+                    "max_streak": row.get("max_streak", 0),
+                }
+            self._loaded = True
+            logger.info(f"StatsCache: загружено {len(self._cache)} пользователей")
+
+    def start_flush_loop(self):
+        """Запускает фоновый поток для периодической записи dirty в БД."""
+        if self._flush_thread is not None and self._flush_thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._flush_thread = threading.Thread(target=self._flush_loop_worker, daemon=True)
+        self._flush_thread.start()
+        logger.info("StatsCache flush loop started")
+
+    def _flush_loop_worker(self):
+        """Фоновый поток: каждые 10 сек записывает dirty данные в БД."""
+        # wait() возвращает True когда stop_event установлен → выходим, без ожидания
+        while not self._stop_event.wait(10.0):
+            try:
+                self.flush_to_db()
+            except Exception as e:
+                logger.error(f"flush loop error: {e}", exc_info=True)
+
+    def stop_flush_loop(self):
+        """Останавливает поток, делает финальный flush. Идемпотентен."""
+        self._stop_event.set()
+        t = self._flush_thread
+        if t is not None and t.is_alive() and threading.current_thread() is not t:
+            t.join(timeout=5.0)
+        self._flush_thread = None
+        try:
+            self.flush_to_db()
+        except Exception as e:
+            logger.error(f"final flush error: {e}", exc_info=True)
+        logger.info("StatsCache stopped")
+
+    # ===================== READ (memory only, DB miss-safe) =====================
+
+    def _create_empty_user(self, user_id: int):
+        """Создаёт запись пользователя в кэше с default значениями + помечает dirty."""
+        self._cache[user_id] = {
+            "_uid": user_id, "username": "Anonymous", "firstname": "",
+            "correct_answers": 0, "streak": 0, "max_streak": 0,
+        }
+
+    def get_user_stats(self, user_id: int, username: str = None, firstname: str = None) -> dict:
+        """Возвращает статистику из кэша. При первом обращении — создает default запись."""
+        with self._lock:
+            if user_id not in self._cache:
+                # CACHE MISS: создаём запись в памяти БЕЗ обращения к БД
+                self._create_empty_user(user_id)
+                self._dirty.add(user_id)
+            stats = self._cache[user_id]
+
+        # Обновляем имя если пришло (вне lock — только чтение _cache)
+        if username and stats["username"] in ("Anonymous", ""):
+            with self._lock:
+                stats["username"] = username
+                self._dirty.add(user_id)
+        if firstname:
+            with self._lock:
+                stats["firstname"] = firstname
+                self._dirty.add(user_id)
+
+        return dict(stats)
+
+    def get_leaderboard_from_cache(self, limit: int = 20) -> List[dict]:
+        """Возвращает таблицу лидеров из кэша."""
+        with self._lock:
+            # Фильтр: только пользователи с правильными ответами
+            sorted_users = sorted(
+                (s for s in self._cache.values() if s["correct_answers"] > 0),
+                key=lambda x: x["correct_answers"], reverse=True
+            )[:limit]
+
+            return [
+                {
+                    "rank": idx + 1,
+                    "user_id": s["_uid"],
+                    "username": s.get("username") or f"User {s['_uid']}",
+                    "correct_answers": s["correct_answers"],
+                    "total_answers": s["correct_answers"],
+                    "percentage": 100.0,
+                    "max_streak": s.get("max_streak", 0),
+                }
+                for idx, s in enumerate(sorted_users)
+            ]
+
+    # ===================== WRITE (memory only) =====================
+
+    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None,
+                          firstname: str = None, question_id: int = None, word: str = None):
+        """Обновляет статистику ТОЛЬКО В ПАМЯТИ. Помечает user_id dirty для батч-записи."""
+        with self._lock:
+            if user_id not in self._cache:
+                self._create_empty_user(user_id)
+                self._dirty.add(user_id)
+
+            s = self._cache[user_id]
+
+            # Смена имени/отчества → помечаем dirty
+            if username and s["username"] != username:
+                s["username"] = username
+                self._dirty.add(user_id)
+            elif firstname and s["firstname"] != firstname:
+                s["firstname"] = firstname
+                self._dirty.add(user_id)
+
+            # Обновляем ответы (одна операция под одним локом)
+            if is_correct:
+                s["correct_answers"] += 1
+                s["streak"] += 1
+                if s["streak"] > s["max_streak"]:
+                    s["max_streak"] = s["streak"]
+                self._dirty.add(user_id)
+            else:
+                s["streak"] = 0
+                self._dirty.add(user_id)
+
+    def flush_to_db(self):
+        """Батч-запись dirty записей в SQLite одним INSERT OR REPLACE."""
+        if not self._dirty:
+            return
+
+        # a) Snapshot + clear под единым локом
+        with self._lock:
+            dirty_ids = list(self._dirty)
+            self._dirty.clear()
+
+        try:
+            # b) Читаем cache данные (под своим блоком лога, вне общего lock для каждого uid)
+            rows_to_insert = []
+            with self._lock:
+                for uid in dirty_ids:
+                    if uid not in self._cache:
+                        continue
+                    s = self._cache[uid]
+                    rows_to_insert.append((
+                        uid, s["username"], s["firstname"],
+                        s["correct_answers"], s["streak"], s["max_streak"],
+                    ))
+
+            # Запись в БД (вне лока — хендлеры не блокируются)
+            if rows_to_insert:
+                self._db.batch_update_user_stats(rows_to_insert)
+                logger.debug(f"Flushed {len(rows_to_insert)} user(s)")
+
+        except Exception as e:
+            # c) При ошибке возвращаем все dirty IDs обратно
+            logger.error(f"flush_to_db failed, re-queuing {len(dirty_ids)} user(s): {e}", exc_info=True)
+            with self._lock:
+                for uid in dirty_ids:
+                    self._dirty.add(uid)
+
+    def reset_user_stats_for_id(self, user_id: int):
+        """Сбрасывает статистику пользователя в кэше (обнуляет correct_answers, streak)."""
+        with self._lock:
+            if user_id in self._cache:
+                s = self._cache[user_id]
+                s["correct_answers"] = 0
+                s["streak"] = 0
+                self._dirty.add(user_id)
+
+    def get_all_stats(self):
+        """Возвращает копию всего кэша (для отладки)."""
+        with self._lock:
+            return dict(self._cache)
+
+
+# ===================== DataManager (wrapper + singleton) =====================
 
 class DataManager:
-    """Класс для управления данными вопросов и статистикой пользователей."""
-    
+    """Управление вопросами и статистикой. Использует StatsCache для user_stats."""
+
     def __init__(self):
-        logger.info(f"Инициализация DataManager. USE_MONGODB={USE_MONGODB}")
-        if USE_MONGODB:
-            self.db = MongoDB(MONGODB_URI)
-            logger.info("Используется MongoDB")
-        else:
-            self.db = Database()
-            logger.info("Используется SQLite")
-        
+        logger.info("DataManager: инициализация (загрузка паронимов.json)...")
         # Загружаем задания из JSON файла
-        self.tasks = self._load_tasks()
-        logger.info(f"Загружено {len(self.tasks)} заданий")
-    
-    def _load_tasks(self) -> List[Dict[str, Any]]:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        data_path = os.path.join(script_dir, '..', 'data', 'paronyms.json')
+        self._load_tasks(data_path)
+        # StatsCache — без БД (init_data_manager подключит позже)
+        self.stats_cache = StatsCache()
+        logger.info(f"DataManager: загружено {len(self.tasks)} заданий")
+
+    def _load_tasks(self, path):
         """Загружает задания из paronyms.json."""
         try:
-            script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            data_path = os.path.join(script_dir, 'data', 'paronyms.json')
-            
-            with open(data_path, 'r', encoding='utf-8') as f:
+            with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-                # Новый формат: список заданий без обёртки 'tasks'
                 if isinstance(data, list):
-                    return data
-                return data.get('tasks', [])
+                    self.tasks = data
+                else:
+                    self.tasks = data.get('tasks', [])
         except Exception as e:
-            print(f"Ошибка загрузки заданий: {e}")
-            return []
-    
+            logger.error(f"Ошибка загрузки паронимов: {e}")
+            self.tasks = []
+
     def get_random_question(self) -> Optional[Dict[str, Any]]:
-        """Возвращает случайный вопрос из файла."""
+        """Возвращает случайный вопрос с перемешанными вариантами."""
         if not self.tasks:
             return None
-
         task = random.choice(self.tasks)
-        # Перемешиваем варианты ответов случайным образом
-        import copy
-        shuffled_options = copy.copy(task['options'])
-        random.shuffle(shuffled_options)
-
+        import copy as _copy
+        shuffled = _copy.copy(task['options'])
+        random.shuffle(shuffled)
         return {
             'id': task['id'],
-            'task': task['task'],
-            'options': shuffled_options,
+            'task': task.get('task') or task.get('question'),
+            'options': shuffled,
             'correct_answer': task['correct_answer'],
-            'explanation': task.get('explanation', '')
+            'explanation': task.get('explanation', ''),
+            'word': task.get('word', ''),
         }
-    
-    def get_user_stats(self, user_id: int, username: str = None, firstname: str = None) -> Dict[str, int]:
-        """Возвращает статистику пользователя."""
-        return self.db.get_user_stats(user_id, username, firstname)
 
-    def update_user_stats(self, user_id: int, is_correct: bool, username: str = None, firstname: str = None, question_id: int = None, word: str = None):
-        """Обновляет статистику пользователя."""
-        logger.info(f"update_user_stats: user_id={user_id}, is_correct={is_correct}, username={username}, firstname={firstname}, question_id={question_id}, word={word}")
-        self.db.update_user_stats(user_id, is_correct, username, firstname, question_id, word)
-    
-    def get_leaderboard(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Возвращает таблицу лидеров."""
-        return self.db.get_leaderboard(limit)
-    
-    def reset_user_stats(self, user_id: int):
-        """Сбрасывает статистику пользователя."""
-        self.db.reset_user_stats(user_id)
-    
-    def get_user_solved_words_count(self, user_id: int) -> int:
-        """Возвращает количество уникальных решённых слов пользователя."""
-        return self.db.get_user_solved_words_count(user_id)
+    def get_user_stats(self, user_id, username=None, firstname=None):
+        return self.stats_cache.get_user_stats(user_id, username, firstname)
+
+    def update_user_stats(self, user_id, is_correct, username=None, firstname=None, question_id=None, word=None):
+        self.stats_cache.update_user_stats(user_id, is_correct, username, firstname, question_id, word)
+
+    def get_leaderboard(self, limit=10):
+        return self.stats_cache.get_leaderboard_from_cache(limit)
+
+    def reset_user_stats(self, user_id):
+        self.stats_cache.reset_user_stats_for_id(user_id)
+
+    def start_flush_loop(self):
+        self.stats_cache.start_flush_loop()
+
+    def stop_flush_loop(self):
+        self.stats_cache.stop_flush_loop()
+
+
+# ===================== MODULE SINGLETON + INIT =====================
+
+data_manager = DataManager()  # Загружает paronyms.json ОДИН раз при импорте модуля
+
+
+def init_data_manager(db=None):
+    """
+    ИДЕМПОТЕНТНАЯ инициализация (IN-PLACE, без перепривязки глобала):
+    1. Подключаем БД к существующему экземпляру.
+    2. Загружаем данные из БД в кэш (один раз).
+
+    Возвращает ссылку на модульный экземпляр data_manager.
+    """
+    if db is None:
+        logger.warning("init_data_manager(db=None) — DataManager без БД!")
+        return data_manager
+
+    # Если уже был инициализирован с другой БД — логируем но продолжаем
+    old_db = data_manager.stats_cache._db
+    if old_db is not None and old_db != db:
+        logger.warning("init_data_manager: заменяем старую БД на новую")
+
+    data_manager.stats_cache.attach_db(db)
+    data_manager.stats_cache.load_all_from_db()
+
+    logger.info("DataManager инициализирован: DB подключен, кэш загружен")
+    return data_manager

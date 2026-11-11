@@ -1,11 +1,25 @@
 """
 Главный файл бота для подготовки к ЕГЭ по паронимам.
-Запускает бота и регистрирует все обработчики.
-Использует библиотеку pyTelegramBotAPI (telebot).
+Использует pyTelegramBotAPI (telebot).
+Архитектура: все данные в RAM, SQLite только для персистентности.
 """
 
+import sys
+import signal
 import telebot
+import logging
+
 from config import BOT_TOKEN
+import atexit
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+)
+
+from utils.data_manager import init_data_manager, data_manager
+from utils.database import Database
 from handlers.start import cmd_start, cmd_top, cmd_count
 from handlers.callbacks import (
     show_main_menu, start_training,
@@ -16,7 +30,23 @@ from handlers.text_handler import handle_text_check
 # Создаём экземпляр бота
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
-# Регистрируем обработчики команд
+# Инициализация DataManager с БД (кэширует user_stats в RAM)
+db = Database()
+init_data_manager(db)
+data_manager.start_flush_loop()
+
+# Graceful shutdown: atexit вызовет stop_flush_loop, signal handler просто ставит выход
+def _signal_handler(signum, frame):
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, _signal_handler)
+signal.signal(signal.SIGINT, _signal_handler)
+
+# Единственная регистрация flush-а — здесь (не дублировать в utils/data_manager.py)
+atexit.register(data_manager.stop_flush_loop)
+atexit.register(bot.close_polling)
+# ==================== Handlers ====================
+
 @bot.message_handler(commands=['start'])
 def start_handler(message):
     cmd_start(message, bot)
@@ -29,10 +59,9 @@ def top_handler(message):
 def count_handler(message):
     cmd_count(message, bot)
 
-# Обработчик текстовых сообщений (проверка текста и тренировка)
+# Обработчик текстовых сообщений (не используется — ответы через кнопки)
 @bot.message_handler(func=lambda message: True, content_types=['text'])
 def text_handler(message):
-    # Если это не команда, обрабатываем
     if not message.text.startswith('/'):
         handle_text_check(message, bot)
 
@@ -57,10 +86,10 @@ def leaderboard_handler(call):
 def answer_handler(call):
     handle_answer(call, bot)
 
+
 if __name__ == "__main__":
-    import sys
     sys.stdout.reconfigure(encoding='utf-8')
-    print("Бот запущен!", flush=True)
+    print("Бот запущен! (кэширование активно, flush каждые 10с)", flush=True)
     try:
         bot.infinity_polling()
     except Exception as e:

@@ -5,10 +5,10 @@
 import logging
 from keyboards.inline import get_main_menu_keyboard, get_leaderboard_keyboard, get_back_to_menu_keyboard
 from handlers.callbacks import show_stats, leaderboard_message_ids
-from utils.data_manager import DataManager
+# Используем глобальный data_manager (инициализируется в main.py / render_main.py)
+from utils.data_manager import data_manager
 
 logger = logging.getLogger(__name__)
-data_manager = DataManager()
 
 
 def cmd_start(message, bot):
