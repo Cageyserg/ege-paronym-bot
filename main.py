@@ -31,7 +31,12 @@ from handlers.text_handler import handle_text_check
 bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
 # Инициализация DataManager с БД (кэширует user_stats в RAM)
-db = Database()
+from config import MONGODB_URI
+if MONGODB_URI:
+    from utils.mongo_database import MongoDatabase
+    db = MongoDatabase(MONGODB_URI)
+else:
+    db = Database()
 init_data_manager(db)
 data_manager.start_flush_loop()
 

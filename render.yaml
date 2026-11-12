@@ -10,3 +10,5 @@ services:
         sync: false
       - key: WEBHOOK_URL
         generateValue: true
+      - key: MONGODB_URI
+        sync: false

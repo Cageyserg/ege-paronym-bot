@@ -26,7 +26,12 @@ logger = logging.getLogger(__name__)
 from utils import data_manager
 from utils.database import Database
 
-db = Database()
+from config import MONGODB_URI
+if MONGODB_URI:
+    from utils.mongo_database import MongoDatabase
+    db = MongoDatabase(MONGODB_URI)
+else:
+    db = Database()
 
 # init_data_manager идемпотентен: переиспользует модульный экземпляр (paronyms.json грузится один раз)
 data_manager.init_data_manager(db)
