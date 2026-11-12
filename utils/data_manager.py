@@ -12,11 +12,8 @@ import os
 import random
 import copy
 import logging
-import sqlite3
 import threading
 from typing import Dict, List, Optional, Any
-
-# MongoDB removed; no longer needed
 
 logger = logging.getLogger(__name__)
 
@@ -33,35 +30,22 @@ class StatsCache:
         self._stop_event = threading.Event()
         self._flush_thread = None
         self._loaded = False
+        self._warned_no_db = False
 
     # ===================== LIFE CYCLE =====================
 
     def attach_db(self, db):
-        """Подключает БД к существующему кэшу. При смене БД — сброс старого кэша."""
+        """Подключает БД к существующему кэшу. При смене БД — flush старой перед очисткой."""
         with self._lock:
             if self._db is not None and self._db is not db:
-                logger.warning("StatsCache: заменяем БД, сначала flush старой...")
-                # Флешим всё из старой БД перед переключением
+                logger.warning("StatsCache: смена БД, flush старой перед переключением")
                 try:
-                    dirty_snapshot = list(self._dirty)
-                    old_db = self._db
-                    # Очищаем кэш и пересоздаём dirty записи
-                    self._cache.clear()
-                    self._dirty.clear()
-                    self._loaded = False
-                    for uid in dirty_snapshot:
-                        s = self._cache[uid] if uid in self._cache else {
-                            "_uid": uid, "username": "", "firstname": "",
-                            "correct_answers": 0, "streak": 0, "max_streak": 0
-                        }
-                    # Записываем обратно во внешнюю транзакцию (вне нашего лока)
-                    old_db.batch_update_user_stats([
-                        (uid, s["username"], s["firstname"],
-                         s["correct_answers"], s["streak"], s["max_streak"])
-                        for uid, s in self._cache.items()
-                    ])
+                    self.flush_to_db()   # self._db ещё СТАРАЯ — пишем в неё
                 except Exception as e:
-                    logger.error(f"Warning flushing old DB before switch: {e}", exc_info=True)
+                    logger.error(f"flush старой БД не удался: {e}", exc_info=True)
+                self._cache.clear()
+                self._dirty.clear()
+                self._loaded = False
             self._db = db
 
     def load_all_from_db(self):
@@ -97,7 +81,6 @@ class StatsCache:
 
     def _flush_loop_worker(self):
         """Фоновый поток: каждые 10 сек записывает dirty данные в БД."""
-        # wait() возвращает True когда stop_event установлен → выходим, без ожидания
         while not self._stop_event.wait(10.0):
             try:
                 self.flush_to_db()
@@ -130,17 +113,16 @@ class StatsCache:
         """Возвращает статистику из кэша. При первом обращении — создает default запись."""
         with self._lock:
             if user_id not in self._cache:
-                # CACHE MISS: создаём запись в памяти БЕЗ обращения к БД
                 self._create_empty_user(user_id)
                 self._dirty.add(user_id)
             stats = self._cache[user_id]
 
-        # Обновляем имя если пришло (вне lock — только чтение _cache)
-        if username and stats["username"] in ("Anonymous", ""):
+        # Обновляем имя только при реальных изменениях — НЕ пишем в БД без изменений
+        if username and stats["username"] != username:
             with self._lock:
                 stats["username"] = username
                 self._dirty.add(user_id)
-        if firstname:
+        if firstname and stats["firstname"] != firstname:
             with self._lock:
                 stats["firstname"] = firstname
                 self._dirty.add(user_id)
@@ -150,7 +132,6 @@ class StatsCache:
     def get_leaderboard_from_cache(self, limit: int = 20) -> List[dict]:
         """Возвращает таблицу лидеров из кэша."""
         with self._lock:
-            # Фильтр: только пользователи с правильными ответами
             sorted_users = sorted(
                 (s for s in self._cache.values() if s["correct_answers"] > 0),
                 key=lambda x: x["correct_answers"], reverse=True
@@ -181,15 +162,15 @@ class StatsCache:
 
             s = self._cache[user_id]
 
-            # Смена имени/отчества → помечаем dirty
+            # Смена имени/отчества — два независимых if (не elif!)
             if username and s["username"] != username:
                 s["username"] = username
                 self._dirty.add(user_id)
-            elif firstname and s["firstname"] != firstname:
+            if firstname and s["firstname"] != firstname:
                 s["firstname"] = firstname
                 self._dirty.add(user_id)
 
-            # Обновляем ответы (одна операция под одним локом)
+            # Обновляем ответы
             if is_correct:
                 s["correct_answers"] += 1
                 s["streak"] += 1
@@ -202,6 +183,13 @@ class StatsCache:
 
     def flush_to_db(self):
         """Батч-запись dirty записей в SQLite одним INSERT OR REPLACE."""
+        # Предупреждение об отсутствии БД (один раз)
+        if self._db is None:
+            if not self._warned_no_db:
+                self._warned_no_db = True
+                logger.warning("StatsCache: БД не подключена — данные не сохраняются")
+            return
+
         if not self._dirty:
             return
 
@@ -211,7 +199,7 @@ class StatsCache:
             self._dirty.clear()
 
         try:
-            # b) Читаем cache данные (под своим блоком лога, вне общего lock для каждого uid)
+            # b) Читаем cache данные (отдельный блок лога)
             rows_to_insert = []
             with self._lock:
                 for uid in dirty_ids:
@@ -236,12 +224,13 @@ class StatsCache:
                     self._dirty.add(uid)
 
     def reset_user_stats_for_id(self, user_id: int):
-        """Сбрасывает статистику пользователя в кэше (обнуляет correct_answers, streak)."""
+        """Сбрасывает статистику пользователя в кэше."""
         with self._lock:
             if user_id in self._cache:
                 s = self._cache[user_id]
                 s["correct_answers"] = 0
                 s["streak"] = 0
+                s["max_streak"] = 0
                 self._dirty.add(user_id)
 
     def get_all_stats(self):
@@ -257,11 +246,9 @@ class DataManager:
 
     def __init__(self):
         logger.info("DataManager: инициализация (загрузка паронимов.json)...")
-        # Загружаем задания из JSON файла
         script_dir = os.path.dirname(os.path.abspath(__file__))
         data_path = os.path.join(script_dir, '..', 'data', 'paronyms.json')
-        self._load_tasks(data_path)
-        # StatsCache — без БД (init_data_manager подключит позже)
+        self.tasks = self._load_tasks(data_path)
         self.stats_cache = StatsCache()
         logger.info(f"DataManager: загружено {len(self.tasks)} заданий")
 
@@ -271,20 +258,18 @@ class DataManager:
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 if isinstance(data, list):
-                    self.tasks = data
-                else:
-                    self.tasks = data.get('tasks', [])
+                    return data
+                return data.get('tasks', [])
         except Exception as e:
             logger.error(f"Ошибка загрузки паронимов: {e}")
-            self.tasks = []
+            return []
 
     def get_random_question(self) -> Optional[Dict[str, Any]]:
         """Возвращает случайный вопрос с перемешанными вариантами."""
         if not self.tasks:
             return None
         task = random.choice(self.tasks)
-        import copy as _copy
-        shuffled = _copy.copy(task['options'])
+        shuffled = copy.copy(task['options'])
         random.shuffle(shuffled)
         return {
             'id': task['id'],
@@ -331,7 +316,6 @@ def init_data_manager(db=None):
         logger.warning("init_data_manager(db=None) — DataManager без БД!")
         return data_manager
 
-    # Если уже был инициализирован с другой БД — логируем но продолжаем
     old_db = data_manager.stats_cache._db
     if old_db is not None and old_db != db:
         logger.warning("init_data_manager: заменяем старую БД на новую")
