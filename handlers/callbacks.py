@@ -32,8 +32,14 @@ def _get_lock(user_id):
         return _locks[user_id]
 
 
-def _md(value):
-    return str(value).replace("_", "\\_")
+def md_escape(value):
+    text = "" if value is None else str(value)
+    for ch in ("\\", "_", "*", "[", "`"):
+        text = text.replace(ch, "\\" + ch)
+    return text
+
+
+_md = md_escape  # обратная совместимость с handle_answer
 
 
 def _new_state(question):
@@ -247,8 +253,8 @@ def show_leaderboard(call, bot):
 
     text = "*Таблица лидеров*\n\n"
     for entry in leaderboard:
-        username = entry['username'] or f"User {entry['user_id']}"
-        text += f"{entry['rank']}. {username} — {entry['correct_answers']}\n"
+        name = md_escape(entry.get("display_name") or entry.get("username") or "Без имени")
+        text += f"{entry['rank']}. {name} — {entry['correct_answers']}\n"
 
     msg = bot.send_message(
         chat_id,

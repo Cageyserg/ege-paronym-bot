@@ -49,7 +49,7 @@ signal.signal(signal.SIGINT, _signal_handler)
 
 # Единственная регистрация flush-а — здесь (не дублировать в utils/data_manager.py)
 atexit.register(data_manager.stop_flush_loop)
-atexit.register(bot.close_polling)
+atexit.register(bot.stop_polling)
 # ==================== Handlers ====================
 
 @bot.message_handler(commands=['start'])

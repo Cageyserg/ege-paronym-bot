@@ -4,7 +4,7 @@
 
 import logging
 from keyboards.inline import get_main_menu_keyboard, get_leaderboard_keyboard, get_back_to_menu_keyboard
-from handlers.callbacks import show_stats, leaderboard_message_ids
+from handlers.callbacks import show_stats, leaderboard_message_ids, md_escape
 # Используем глобальный data_manager (инициализируется в main.py / render_main.py)
 from utils.data_manager import data_manager
 
@@ -56,8 +56,8 @@ def cmd_top(message, bot):
 
         text = "*Таблица лидеров (топ 20)*\n\n"
         for entry in leaderboard:
-            username = entry['username'] or f"User {entry['user_id']}"
-            text += f"{entry['rank']}. {username} — {entry['correct_answers']}\n"
+            name = md_escape(entry.get("display_name") or entry.get("username") or "Без имени")
+            text += f"{entry['rank']}. {name} — {entry['correct_answers']}\n"
 
         msg = bot.send_message(
             chat_id,

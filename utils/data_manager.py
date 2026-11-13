@@ -18,6 +18,17 @@ from typing import Dict, List, Optional, Any
 logger = logging.getLogger(__name__)
 
 
+def _display_name(s: dict) -> str:
+    """Никнейм для таблицы лидеров: имя профиля → @username → «Без имени»."""
+    first = (s.get("firstname") or "").strip()
+    if first and first != "Anonymous":
+        return first
+    uname = (s.get("username") or "").strip().lstrip("@")
+    if uname and uname != "Anonymous":
+        return "@" + uname
+    return "Без имени"
+
+
 # ===================== StatsCache =====================
 class StatsCache:
     """In-memory cache для user_stats. Все мутации — под RLock. Flush в БД каждые 10 сек."""
@@ -142,6 +153,8 @@ class StatsCache:
                     "rank": idx + 1,
                     "user_id": s["_uid"],
                     "username": s.get("username") or f"User {s['_uid']}",
+                    "firstname": s.get("firstname") or "",
+                    "display_name": _display_name(s),
                     "correct_answers": s["correct_answers"],
                     "total_answers": s["correct_answers"],
                     "percentage": 100.0,
