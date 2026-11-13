@@ -1,25 +1,83 @@
 """
-Обработчики callback-запросов (нажатия на инлайн-кнопки).
-Использует глобальный data_manager из utils.data_manager.
+Обработчики callback-запросов.
+Тренировка: следующее задание открывается только после верного ответа.
+Неверный ответ повышает поколение клавиатуры; остаток очереди кликов
+по старым кнопкам молча отбрасывается (анти-брутфорс).
 """
+
+import logging
+import threading
 
 from keyboards.inline import (
     get_main_menu_keyboard,
     get_back_to_menu_keyboard,
     get_leaderboard_keyboard,
-    get_answer_keyboard
+    get_answer_keyboard,
 )
-# Глобальный data_manager с кэшированием и flush-циклом
 from utils.data_manager import data_manager
-# Хранилище текущих вопросов пользователей
 from handlers.text_handler import current_questions
 
-# Хранилище message_id для таблицы лидеров (chat_id -> message_id)
+logger = logging.getLogger(__name__)
+
 leaderboard_message_ids = {}
+
+_locks = {}
+_locks_guard = threading.Lock()
+
+
+def _get_lock(user_id):
+    with _locks_guard:
+        if user_id not in _locks:
+            _locks[user_id] = threading.Lock()
+        return _locks[user_id]
+
+
+def _md(value):
+    return str(value).replace("_", "\\_")
+
+
+def _new_state(question):
+    return {
+        "qid": question["id"],
+        "attempt": 0,
+        "options": list(question["options"]),
+        "correct": question["correct_answer"],
+        "explanation": question.get("explanation", ""),
+        "task": question["task"],
+        "done": False,
+    }
+
+
+def _question_text(state):
+    return (
+        "📝 Выберите правильное слово\n\n"
+        f"{state['task']}\n\n"
+        "💡 Следующее задание откроется только после верного ответа."
+    )
+
+
+def _refresh_keyboard(bot, chat_id, message_id, state):
+    """Новое поколение клавиатуры. Старые кнопки (и клики по ним) мертвы."""
+    kb = get_answer_keyboard(state["qid"], state["attempt"], state["options"])
+    try:
+        bot.edit_message_reply_markup(chat_id, message_id, reply_markup=kb)
+        return
+    except Exception as e:
+        logger.warning(f"edit markup failed: {e}")
+    try:
+        bot.edit_message_reply_markup(chat_id, message_id, reply_markup=kb)
+        return
+    except Exception as e:
+        logger.error(f"edit markup retry failed: {e}")
+    try:
+        bot.send_message(chat_id, _question_text(state), reply_markup=kb)
+    except Exception as e:
+        logger.error(f"fallback send failed: {e}")
 
 
 def show_main_menu(call, bot):
-    """Показывает главное меню."""
+    current_questions.pop(call.from_user.id, None)
+    bot.answer_callback_query(call.id)
     bot.edit_message_text(
         "*🏠 Главное меню*\n\nВыберите режим работы:",
         call.message.chat.id,
@@ -30,89 +88,113 @@ def show_main_menu(call, bot):
 
 
 def start_training(call, bot):
-    """Начинает режим тренировки."""
     user_id = call.from_user.id
-    # Вопрос берётся из RAM (paronyms.json загружен при старте)
-    question = data_manager.get_random_question()
-
-    if not question:
-        bot.answer_callback_query(call.id, "Нет доступных вопросов!", show_alert=True)
-        return
-
-    current_questions[user_id] = question
-
-    bot.edit_message_text(
-        f"📝 Выберите правильное слово\n\n"
-        f"{question['task']}\n\n"
-        f"💡 Выберите вариант ответа",
-        call.message.chat.id,
-        call.message.message_id,
-        reply_markup=get_answer_keyboard(question['options'])
-    )
+    with _get_lock(user_id):
+        question = data_manager.get_random_question()
+        if not question:
+            bot.answer_callback_query(call.id, "Нет доступных вопросов!", show_alert=True)
+            return
+        state = _new_state(question)
+        current_questions[user_id] = state
+        bot.answer_callback_query(call.id)
+        try:
+            bot.edit_message_text(
+                _question_text(state),
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=get_answer_keyboard(state["qid"], 0, state["options"]),
+            )
+        except Exception as e:
+            logger.warning(f"edit question failed: {e}")
 
 
 def handle_answer(call, bot):
-    """Обрабатывает ответ пользователя.
-    
-    Статистика обновляется ТОЛЬКО В ПАМЯТИ (через StatsCache).
-    Запись в БД происходит батчами каждые 10 секунд.
-    """
     user_id = call.from_user.id
-    username = call.from_user.username
-    firstname = call.from_user.first_name
+    chat_id = call.message.chat.id
+    message_id = call.message.message_id
 
-    user_answer = call.data.replace("answer_", "")
-
-    if user_id not in current_questions:
-        bot.answer_callback_query(call.id, "Сначала начните тренировку!", show_alert=True)
+    try:
+        _, qid_s, att_s, idx_s = call.data.split(":")
+        qid, attempt, idx = int(qid_s), int(att_s), int(idx_s)
+    except (ValueError, AttributeError):
+        bot.answer_callback_query(call.id)
         return
 
-    question = current_questions[user_id]
-    correct_answer = question['correct_answer']
-    explanation = question['explanation']
+    with _get_lock(user_id):
+        state = current_questions.get(user_id)
 
-    # Проверяем ответ
-    is_correct = user_answer.lower() == correct_answer.lower()
+        if state is None or state["done"] or state["qid"] != qid:
+            bot.answer_callback_query(call.id)
+            return
 
-    # Обновляем статистику В ПАМЯТИ (без обращения к БД)
-    data_manager.update_user_stats(user_id, is_correct, username, firstname, question['id'], correct_answer)
+        # Остаток очереди после неверного ответа: старые кнопки мертвы.
+        if state["attempt"] != attempt:
+            bot.answer_callback_query(call.id)
+            return
 
-    if is_correct:
-        response_text = (
-            f"✅ Правильно!\n\n"
-            f"Правильный ответ: *{correct_answer}*\n\n"
-            f"📖 {explanation}"
+        if not (0 <= idx < len(state["options"])):
+            bot.answer_callback_query(call.id)
+            return
+
+        chosen = state["options"][idx]
+        is_correct = chosen.lower() == state["correct"].lower()
+
+        if not is_correct:
+            data_manager.update_user_stats(
+                user_id, False, call.from_user.username, call.from_user.first_name
+            )
+            state["attempt"] += 1
+            bot.answer_callback_query(call.id, "❌ Неправильно! Попробуй ещё раз.", show_alert=True)
+            _refresh_keyboard(bot, chat_id, message_id, state)
+            return
+
+        state["done"] = True
+        data_manager.update_user_stats(
+            user_id, True, call.from_user.username, call.from_user.first_name
         )
-
-        bot.edit_message_text(
-            response_text,
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=get_back_to_menu_keyboard(),
-            parse_mode='Markdown'
-        )
+        bot.answer_callback_query(call.id)
+        try:
+            bot.edit_message_text(
+                "✅ Правильно!\n\n"
+                f"Правильный ответ: *{_md(state['correct'])}*\n\n"
+                f"📖 {_md(state['explanation'])}",
+                chat_id, message_id,
+                reply_markup=get_back_to_menu_keyboard(),
+                parse_mode='Markdown',
+            )
+        except Exception as e:
+            logger.warning(f"edit result failed: {e}")
 
         next_question = data_manager.get_random_question()
+        if next_question is None:
+            current_questions.pop(user_id, None)
+            bot.send_message(chat_id, "Задания закончились.",
+                             reply_markup=get_main_menu_keyboard())
+            return
 
-        if next_question:
-            current_questions[user_id] = next_question
-            bot.send_message(
-                call.message.chat.id,
-                f"📝 Выберите правильное слово\n\n"
-                f"{next_question['task']}\n\n"
-                f"💡 Выберите вариант ответа",
-                reply_markup=get_answer_keyboard(next_question['options'])
-            )
-    else:
-        bot.answer_callback_query(
-            call.id,
-            f"❌ Неправильно!\n\nПопробуйте ещё раз!",
-            show_alert=True
+        new_state = _new_state(next_question)
+        current_questions[user_id] = new_state
+        bot.send_message(
+            chat_id,
+            _question_text(new_state),
+            reply_markup=get_answer_keyboard(new_state["qid"], 0, new_state["options"]),
         )
+
+
+def handle_legacy_answer(call, bot):
+    """Кнопки из сообщений, отправленных до обновления (callback_data='answer_слово')."""
+    bot.answer_callback_query(
+        call.id,
+        "Кнопки из старой версии. Нажми «Тренировка», чтобы получить задание.",
+        show_alert=True,
+    )
+    try:
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+    except Exception:
+        pass
 
 
 def show_stats(call, bot):
-    """Показывает статистику пользователя из кэша."""
     user_id = call.from_user.id
     username = call.from_user.username
     firstname = call.from_user.first_name
@@ -143,22 +225,20 @@ def show_stats(call, bot):
 
 
 def show_leaderboard(call, bot):
-    """Показывает таблицу лидеров из кэша."""
     chat_id = call.message.chat.id
     leaderboard = data_manager.get_leaderboard(limit=20)
 
     if chat_id in leaderboard_message_ids:
         try:
             bot.delete_message(chat_id, leaderboard_message_ids[chat_id])
-        except Exception as e:
+        except Exception:
             pass
         del leaderboard_message_ids[chat_id]
 
     if not leaderboard:
         msg = bot.send_message(
             chat_id,
-            "*Таблица лидеров*\n\n"
-            "Пока нет участников. Станьте первым!",
+            "*Таблица лидеров*\n\nПока нет участников. Станьте первым!",
             reply_markup=get_leaderboard_keyboard(),
             parse_mode='Markdown'
         )

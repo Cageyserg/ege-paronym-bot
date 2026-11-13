@@ -59,7 +59,7 @@ bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 from handlers.start import cmd_start, cmd_top, cmd_count
 from handlers.callbacks import (
     show_main_menu, start_training,
-    show_stats, show_leaderboard, handle_answer
+    show_stats, show_leaderboard, handle_answer, handle_legacy_answer
 )
 from handlers.text_handler import handle_text_check
 
@@ -98,9 +98,13 @@ def stats_handler(call):
 def leaderboard_handler(call):
     show_leaderboard(call, bot)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("answer_"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith("a:"))
 def answer_handler(call):
     handle_answer(call, bot)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("answer_"))
+def legacy_answer_handler(call):
+    handle_legacy_answer(call, bot)
 
 
 # ==================== Webhook Routes ====================
