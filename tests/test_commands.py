@@ -60,9 +60,7 @@ def test_cmd_top_lists_users(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "1. Вася" in text
-    assert "1 верных" in text
-    assert "серия 1" in text
+    assert "1. Вася — 1 | 🔥 1" in text
 
 
 def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
@@ -74,16 +72,16 @@ def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
 
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "4 верных" in text       # всего правильных ответов
-    assert "серия 3" in text        # максимум подряд, не текущая (она 1)
-    assert "серия 1" not in text
+    # 4 верных всего, серия 3 — максимум подряд (текущая после ошибки 1).
+    assert "1. Вася — 4 | 🔥 3" in text
+    assert "🔥 1" not in text
 
 
 def test_cmd_top_legend_explains_columns(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "серия — максимум подряд" in text
+    assert "верных | 🔥 серия — максимум подряд" in text
 
 
 def test_cmd_top_escapes_markdown(commands, fake_bot, user, manager):
@@ -102,3 +100,34 @@ def test_commands_survive_telegram_errors(commands, fake_bot, user, monkeypatch)
     commands.cmd_help(_message(user), fake_bot)
     commands.cmd_top(_message(user), fake_bot)
     commands.cmd_count(_message(user), fake_bot)
+
+
+def test_leaderboard_entry_matches_reference_format():
+    """Формат строки: `3. Cageyserg — 112 | 🔥 15`."""
+    from handlers.callbacks import leaderboard_entry
+
+    line = leaderboard_entry({
+        "rank": 3, "display_name": "Cageyserg",
+        "correct_answers": 112, "max_streak": 15,
+    })
+    assert line == "3. Cageyserg — 112 | 🔥 15"
+
+
+def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
+    """Реальные документы Mongo: ранги по верным ответам, серия — вторая колонка."""
+    storage._col.insert_many([
+        {"user_id": 1, "firstname": "Имя1", "username": "",
+         "correct_answers": 112, "total_answers": 130, "streak": 2, "max_streak": 15},
+        {"user_id": 2, "firstname": "Имя2", "username": "",
+         "correct_answers": 120, "total_answers": 140, "streak": 3, "max_streak": 18},
+        {"user_id": 3, "firstname": "Имя3", "username": "",
+         "correct_answers": 115, "total_answers": 121, "streak": 0, "max_streak": 16},
+    ])
+    commands.cmd_top(_message(user, "/top"), fake_bot)
+    text = fake_bot.last("send_message")[2]
+    lines = [ln for ln in text.splitlines() if ln[:1].isdigit()]
+    assert lines == [
+        "1. Имя2 — 120 | 🔥 18",
+        "2. Имя3 — 115 | 🔥 16",
+        "3. Имя1 — 112 | 🔥 15",
+    ]

@@ -232,23 +232,31 @@ def show_stats(call, bot):
     )
 
 
+def leaderboard_entry(entry: dict) -> str:
+    """
+    Одна строка таблицы лидеров: `3. Cageyserg — 112 | 🔥 15`.
+
+    Слева — всего верных ответов, справа после 🔥 — лучшая серия подряд.
+    """
+    name = md_escape(entry.get("display_name") or entry.get("username") or "Без имени")
+    correct = entry.get("correct_answers", 0)
+    streak = entry.get("max_streak", 0)
+    return f"{entry['rank']}. {name} — {correct} | 🔥 {streak}"
+
+
 def leaderboard_text(entries) -> str:
     """
     Текст таблицы лидеров.
 
     Для каждого участника показываются два показателя:
     - всего верных ответов;
-    - лучшая серия — максимальное число верных ответов подряд.
+    - лучшая серия (🔥) — максимальное число верных ответов подряд.
     """
     if not entries:
         return "*🏆 Таблица лидеров*\n\nПока нет участников. Станьте первым!"
     lines = ["*🏆 Таблица лидеров*", ""]
-    for entry in entries:
-        name = md_escape(entry.get("display_name") or entry.get("username") or "Без имени")
-        correct = entry.get("correct_answers", 0)
-        streak = entry.get("max_streak", 0)
-        lines.append(f"{entry['rank']}. {name} — {correct} верных · серия {streak}")
-    lines += ["", "_верных — всего правильных ответов, серия — максимум подряд_"]
+    lines += [leaderboard_entry(entry) for entry in entries]
+    lines += ["", "_верных | 🔥 серия — максимум подряд_"]
     return "\n".join(lines)
 
 
