@@ -50,105 +50,31 @@ def test_user_label_strips_at_sign():
     assert user_label("@ivan", "Иван") == "@ivan (Иван)"
 
 
-def test_display_width_counts_cyrillic_as_one_cell():
-    from utils.formatting import display_width
-
-    assert display_width("Яна") == 3
-    assert display_width("Cageyserg") == 9
 
 
-def test_display_width_counts_emoji_as_two_cells():
-    from utils.formatting import display_width
+def test_truncate_keeps_short_text():
+    from utils.formatting import truncate
 
-    assert display_width("🍂") == 2
-    # Аскер(5) + 🍂(2) + 🌧(2) + 🦊(2) = 11: 🌧 в таблице Unicode узкий,
-    # но Telegram рисует его двухклеточным, поэтому нужен диапазон-фолбэк.
-    assert display_width("Аскер🍂🌧🦊") == 11
+    assert truncate("Яна", 24) == "Яна"
 
 
-def test_display_width_treats_zwj_sequence_as_single_emoji():
-    """👨‍👩‍👧‍👦 — 7 кодовых точек, но одна картинка шириной 2."""
-    from utils.formatting import display_width
+def test_truncate_shortens_long_text():
+    from utils.formatting import truncate
 
-    assert display_width("👨‍👩‍👧‍👦") == 2
-
-
-def test_display_width_treats_flag_as_single_emoji():
-    from utils.formatting import display_width
-
-    assert display_width("🇷🇺") == 2
+    result = truncate("Очень-очень длинное имя пользователя", 24)
+    assert len(result) <= 24
+    assert result.endswith("…")
 
 
-def test_display_width_handles_variation_selector():
-    """⚔️ с VS16 — эмблемное начертание, шириной 2; ⚔ без него — 1."""
-    from utils.formatting import display_width
+def test_truncate_collapses_whitespace():
+    """Перевод строки в нике развалил бы строку таблицы."""
+    from utils.formatting import truncate
 
-    assert display_width("⚔️") == 2
-    assert display_width("⚔") == 1
-
-
-def test_display_width_ignores_skin_tone_modifier():
-    from utils.formatting import display_width
-
-    assert display_width("👍🏽") == 2
+    assert truncate("Вася\nПупкин", 24) == "Вася Пупкин"
+    assert truncate("  много   пробелов  ", 24) == "много пробелов"
 
 
-def test_display_width_ignores_zero_width_space():
-    from utils.formatting import display_width
+def test_truncate_handles_none():
+    from utils.formatting import truncate
 
-    # Невидимый ZWSP не занимает клетку: видимых символов четыре.
-    assert display_width("Ва\u200bся") == 4
-
-
-def test_truncate_width_does_not_split_emoji():
-    from utils.formatting import display_width, truncate_width
-
-    family = "👨‍👩‍👧‍👦"
-    result = truncate_width(family * 3, 5)
-    # Бюджет 4 клетки = две целые семьи по 2 клетки плюс многоточие.
-    assert result == family * 2 + "…"
-    assert display_width(result) == 5
-
-
-def test_pad_width_uses_cells_not_len():
-    from utils.formatting import display_width, pad_width
-
-    assert display_width(pad_width("🍂", 6)) == 6
-    assert display_width(pad_width("абв", 6)) == 6
-    assert display_width(pad_width("абвгд", 3)) == 5  # короче не режем
-
-
-def test_display_width_counts_narrow_coded_emoji_as_wide():
-    """
-    Часть эмодзи Unicode помечает как «нейтральные» (east_asian_width=N),
-    но Telegram рисует их во всю ширину. Без фолбэка строка уезжает на клетку.
-    """
-    from utils.formatting import display_width
-
-    for emoji in ("🌧", "🌫", "🌤", "🌡", "🗺", "🛠"):
-        assert display_width(emoji) == 2, emoji
-
-
-def test_display_width_keeps_bmp_symbols_narrow():
-    """Символы BMP вроде ◕ и ✿ рендерятся текстом — они действительно узкие."""
-    from utils.formatting import display_width
-
-    assert display_width("◕") == 1
-    assert display_width("✿") == 1
-    assert display_width("Александр (◕‿◕✿)") == 16
-
-
-def test_leaderboard_aligned_with_real_emoji_nicknames():
-    """Ники из настоящей таблицы лидеров не должны сдвигать колонки."""
-    from handlers.callbacks import leaderboard_text
-    from utils.formatting import display_width
-
-    names = ["Пархаева", "Александр (◕‿◕✿)", "Cageyserg", "-M-", "Ксения",
-             "Аскер🍂🌧🦊", "Vill Hightopp", "BacioInfiore 🐝", "Яна"]
-    entries = [
-        {"rank": i, "display_name": name, "correct_answers": 100 - i, "max_streak": i}
-        for i, name in enumerate(names, 1)
-    ]
-    rows = [ln for ln in leaderboard_text(entries).splitlines()
-            if ln.strip()[:1].isdigit()]
-    assert len({display_width(row.split(" |")[0]) for row in rows}) == 1
+    assert truncate(None, 24) == ""
