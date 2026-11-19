@@ -60,7 +60,7 @@ def test_cmd_top_lists_users(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "1. *Вася* · 1 | 🔗 1" in text
+    assert "1. 1 | 🔗 1 · *Вася*" in text
 
 
 def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
@@ -73,8 +73,8 @@ def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
     # 4 верных всего, серия 3 — максимум подряд (текущая после ошибки 1).
-    assert "1. *Вася* · 4 | 🔗 3" in text
-    assert "🔗 1" not in text
+    assert "1. 4 | 🔗 3 · *Вася*" in text
+    assert "🔗 1 ·" not in text
 
 
 def test_cmd_top_legend_explains_columns(commands, fake_bot, user, manager):
@@ -112,7 +112,7 @@ def test_leaderboard_entry_format():
         "rank": 3, "display_name": "Cageyserg",
         "correct_answers": 112, "max_streak": 15,
     })
-    assert line == "3. *Cageyserg* · 112 | 🔗 15"
+    assert line == "3. 112 | 🔗 15 · *Cageyserg*"
 
 
 def test_leaderboard_has_no_code_block():
@@ -149,9 +149,9 @@ def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
     text = fake_bot.last("send_message")[2]
     lines = [ln for ln in text.splitlines() if ln[:1].isdigit()]
     assert lines == [
-        "1. *Имя2* · 120 | 🔗 18",
-        "2. *Имя3* · 115 | 🔗 16",
-        "3. *Имя1* · 112 | 🔗 15",
+        "1. 120 | 🔗 18 · *Имя2*",
+        "2. 115 | 🔗 16 · *Имя3*",
+        "3. 112 | 🔗 15 · *Имя1*",
     ]
 
 
@@ -176,8 +176,8 @@ def test_leaderboard_handles_six_digit_counters():
         {"rank": 1, "display_name": "Мега", "correct_answers": 123456, "max_streak": 98765},
         {"rank": 2, "display_name": "Яна", "correct_answers": 1, "max_streak": 1},
     ])
-    assert "1. *Мега* · 123456 | 🔗 98765" in text
-    assert "2. *Яна* · 1 | 🔗 1" in text
+    assert "1. 123456 | 🔗 98765 · *Мега*" in text
+    assert "2.      1 | 🔗     1 · *Яна*" in text
 
 
 def test_leaderboard_handles_emoji_nicknames():
@@ -188,5 +188,44 @@ def test_leaderboard_handles_emoji_nicknames():
         {"rank": 1, "display_name": "Аскер🍂🌧🦊", "correct_answers": 40, "max_streak": 8},
         {"rank": 2, "display_name": "BacioInfiore 🐝", "correct_answers": 5, "max_streak": 4},
     ])
-    assert "1. *Аскер🍂🌧🦊* · 40 | 🔗 8" in text
-    assert "2. *BacioInfiore 🐝* · 5 | 🔗 4" in text
+    assert "1. 40 | 🔗 8 · *Аскер🍂🌧🦊*" in text
+    assert "2.  5 | 🔗 4 · *BacioInfiore 🐝*" in text
+
+
+def test_leaderboard_numeric_prefix_has_equal_length():
+    """
+    Выравнивание держится на том, что имя стоит последним.
+
+    Цифры и пробелы в пропорциональном шрифте Telegram моноширинны, поэтому
+    одинаковая длина префикса = одинаковое визуальное выравнивание. Буквы же
+    разной ширины — если бы имя было в начале, колонки бы съехали.
+    """
+    from handlers.callbacks import leaderboard_text
+
+    names = ["Пархаева", "Александр (◕‿◕✿)", "Cageyserg", "-M-", "Аскер🍂🌧🦊",
+             "Vill Hightopp", "BacioInfiore 🐝", "Яна"]
+    entries = [
+        {"rank": i, "display_name": name, "correct_answers": 1000 - i * 7,
+         "max_streak": i}
+        for i, name in enumerate(names, 1)
+    ]
+    rows = [ln for ln in leaderboard_text(entries).splitlines() if ln[:1].isdigit()]
+    prefixes = {row.split(" · ")[0] for row in rows}
+    assert len(prefixes) == len(rows)  # префиксы различаются содержимым
+    assert len({len(row.split(" · ")[0]) for row in rows}) == 1
+
+
+def test_leaderboard_prefix_uses_only_digits_spaces_and_separators():
+    """В выравниваемой части не должно быть букв — иначе ширина «поплывёт»."""
+    import re
+
+    from handlers.callbacks import leaderboard_text
+
+    text = leaderboard_text([
+        {"rank": 1, "display_name": "Ксения", "correct_answers": 41, "max_streak": 20},
+        {"rank": 2, "display_name": "Я", "correct_answers": 1, "max_streak": 1},
+    ])
+    rows = [ln for ln in text.splitlines() if ln[:1].isdigit()]
+    for row in rows:
+        prefix = row.split(" · ")[0]
+        assert re.fullmatch(r"[0-9. |🔗]+", prefix), prefix

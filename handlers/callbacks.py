@@ -243,36 +243,62 @@ def leaderboard_name(entry: dict) -> str:
     return truncate(text, NAME_WIDTH)
 
 
-def leaderboard_entry(entry: dict) -> str:
+def _column_widths(entries) -> tuple[int, int, int]:
+    """
+    Ширины числовых колонок под конкретную таблицу.
+
+    Считаются по фактическим значениям, поэтому появление «1000» или «100000»
+    не сдвигает столбцы относительно коротких чисел.
+    """
+    rank_width = max((len(str(entry.get("rank", 0))) for entry in entries), default=1)
+    correct_width = max(
+        (len(str(entry.get("correct_answers", 0))) for entry in entries),
+        default=1,
+    )
+    streak_width = max(
+        (len(str(entry.get("max_streak", 0))) for entry in entries),
+        default=1,
+    )
+    return max(rank_width, 1), max(correct_width, 1), max(streak_width, 1)
+
+
+def leaderboard_entry(entry: dict, widths: tuple[int, int, int] | None = None) -> str:
     """
     Одна строка таблицы лидеров.
 
     Пример:
-        3. *Cageyserg* · 112 | 🔗 15
+         3.   96 | 🔗 15 · *Cageyserg*
 
-    Колонки не выравниваются пробелами: Telegram рисует текст пропорциональным
-    шрифтом, и любое выравнивание рассыпается. Вместо этого строка читается
-    как обычный текст — имя выделено жирным, показатели разделены «·» и «|».
+    Имя стоит последним намеренно. Цифры и пробелы в пропорциональном шрифте
+    Telegram моноширинные, а буквы — нет: пока строка заканчивается именем,
+    колонки сходятся сами, без ```-блока. Если имя поставить в начало, любая
+    длинная кириллическая строка сдвинет все числа вправо.
     """
+    rank_width, correct_width, streak_width = widths or _column_widths([entry])
+    rank = str(entry.get("rank", 0)).rjust(rank_width)
+    correct = str(entry.get("correct_answers", 0)).rjust(correct_width)
+    streak = str(entry.get("max_streak", 0)).rjust(streak_width)
     name = md_escape(leaderboard_name(entry))
-    correct = entry.get("correct_answers", 0)
-    streak = entry.get("max_streak", 0)
-    return f"{entry.get('rank', 0)}. *{name}* · {correct} | 🔗 {streak}"
+    return f"{rank}. {correct} | 🔗 {streak} · *{name}*"
 
 
 def leaderboard_text(entries) -> str:
     """
     Текст таблицы лидеров.
 
-    Без ```-блока: он выглядел как листинг кода. Для каждого участника
-    показываются два показателя:
+    Без ```-блока: он выглядел как листинг кода. Колонки всё равно сходятся,
+    потому что числовой префикс строки выровнен пробелами, а имя вынесено
+    в конец — там, где ширина букв уже ни на что не влияет.
+
+    Для каждого участника показываются два показателя:
     - всего верных ответов;
     - лучшая серия (🔗) — максимальное число верных ответов подряд.
     """
     entries = list(entries)
     if not entries:
         return "*🏆 Таблица лидеров*\n\nПока нет участников. Станьте первым!"
-    rows = "\n".join(leaderboard_entry(entry) for entry in entries)
+    widths = _column_widths(entries)
+    rows = "\n".join(leaderboard_entry(entry, widths) for entry in entries)
     return (
         "*🏆 Таблица лидеров*\n\n"
         f"{rows}\n\n"
