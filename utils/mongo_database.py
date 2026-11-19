@@ -1,17 +1,16 @@
 """
 MongoDB — единственное хранилище статистики пользователей.
 
-Здесь и только здесь лежат: число верных ответов, лучшая серия подряд,
-username и имя пользователя. Локального кэша и SQLite нет: каждый ответ
-пишется в MongoDB атомарным апдейтом, поэтому данные не расходятся между
-процессами и не теряются при рестарте.
+Здесь и только здесь лежат: количество верно решённых слов, текущая серия,
+максимальная серия, username и имя пользователя. Локального кэша и SQLite нет:
+каждый ответ пишется в MongoDB атомарным апдейтом, поэтому данные не
+расходятся между процессами и не теряются при рестарте.
 
 Документ коллекции user_stats:
     user_id          int    — Telegram id (уникальный индекс)
     username         str    — @username, если есть
     firstname        str    — имя из профиля
-    correct_answers  int    — всего верных ответов
-    total_answers    int    — всего ответов (верных + неверных)
+    correct_answers  int    — сколько слов решено верно
     streak           int    — текущая серия верных подряд
     max_streak       int    — максимальная серия верных подряд
 """
@@ -35,14 +34,12 @@ PUBLIC_FIELDS = {
     "username": 1,
     "firstname": 1,
     "correct_answers": 1,
-    "total_answers": 1,
     "streak": 1,
     "max_streak": 1,
 }
 
 _EMPTY_COUNTERS = {
     "correct_answers": 0,
-    "total_answers": 0,
     "streak": 0,
     "max_streak": 0,
 }
@@ -97,24 +94,22 @@ class MongoDatabase:
 
         Агрегационный пайплайн выполняет инкременты и обновление max_streak
         на стороне MongoDB, поэтому гонки между процессами невозможны.
+
+        Хранятся только три счётчика: верно решённые слова, текущая серия и
+        максимальная серия. Отдельного «всего ответов» нет — неверный ответ
+        лишь обнуляет текущую серию.
         """
         if is_correct:
             pipeline = [
                 {"$set": {
                     "correct_answers": {"$add": [{"$ifNull": ["$correct_answers", 0]}, 1]},
-                    "total_answers": {"$add": [{"$ifNull": ["$total_answers", 0]}, 1]},
                     "streak": {"$add": [{"$ifNull": ["$streak", 0]}, 1]},
                 }},
                 {"$set": {"max_streak": {"$max": [{"$ifNull": ["$max_streak", 0]},
                                                   "$streak"]}}},
             ]
         else:
-            pipeline = [
-                {"$set": {
-                    "total_answers": {"$add": [{"$ifNull": ["$total_answers", 0]}, 1]},
-                    "streak": 0,
-                }},
-            ]
+            pipeline = [{"$set": {"streak": 0}}]
 
         # Ник и имя обновляем в том же апдейте, чтобы они всегда были свежими.
         names = {}

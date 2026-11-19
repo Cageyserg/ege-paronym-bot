@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from utils.data_manager import DataManager, accuracy
+from utils.data_manager import DataManager
 
 
 def test_load_tasks_filters_broken_entries(tmp_path):
@@ -40,20 +40,22 @@ def test_get_random_question_shuffles_and_keeps_answer():
         assert set(q) >= {"id", "task", "options", "correct_answer", "explanation"}
 
 
-def test_stats_counts_correct_and_total(manager):
+def test_stats_counts_correct_streak_and_max(manager):
     manager.update_user_stats(1, True, "u", "Имя")
     manager.update_user_stats(1, False, "u", "Имя")
     stats = manager.get_user_stats(1)
     assert stats["correct_answers"] == 1
-    assert stats["total_answers"] == 2
     assert stats["streak"] == 0
     assert stats["max_streak"] == 1
 
 
-def test_accuracy_helper():
-    assert accuracy(0, 0) == 0.0
-    assert accuracy(1, 2) == 50.0
-    assert accuracy(2, 3) == 66.7
+def test_stats_document_has_only_required_fields(manager, storage):
+    """В MongoDB лежат ровно: слова, текущая серия, максимум, ник и имя."""
+    manager.update_user_stats(1, True, "nick", "Имя")
+    manager.update_user_stats(1, False, "nick", "Имя")
+    raw = storage._col.find_one({"user_id": 1})
+    assert set(raw) == {"_id", "user_id", "username", "firstname",
+                        "correct_answers", "streak", "max_streak"}
 
 
 def test_stats_persist_in_mongo_not_in_ram(manager, storage):
@@ -61,7 +63,8 @@ def test_stats_persist_in_mongo_not_in_ram(manager, storage):
     manager.update_user_stats(5, True, "vasya", "Вася")
 
     raw = storage._col.find_one({"user_id": 5})
-    assert (raw["correct_answers"], raw["total_answers"]) == (1, 1)
+    assert raw["correct_answers"] == 1
+    assert raw["streak"] == 1
     assert raw["username"] == "vasya"
     assert raw["firstname"] == "Вася"
 
@@ -75,7 +78,6 @@ def test_wrong_answer_updates_mongo(manager, storage):
     manager.update_user_stats(6, True, "u", "")
     manager.update_user_stats(6, False, "u", "")
     raw = storage._col.find_one({"user_id": 6})
-    assert raw["total_answers"] == 2
     assert raw["correct_answers"] == 1
     assert raw["streak"] == 0
     assert raw["max_streak"] == 1
@@ -94,16 +96,8 @@ def test_leaderboard_sorted_and_limited(manager):
     rows = manager.get_leaderboard(limit=2)
     assert [r["user_id"] for r in rows] == [2, 1]
     assert rows[0]["rank"] == 1
-    assert rows[0]["percentage"] == 100.0
+    assert "display_name" in rows[0]
     assert all(r["correct_answers"] > 0 for r in rows)
-
-
-def test_leaderboard_percentage_uses_total(manager):
-    manager.update_user_stats(1, True, "u", "")
-    manager.update_user_stats(1, False, "u", "")
-    entry = manager.get_leaderboard(limit=1)[0]
-    assert entry["percentage"] == 50.0
-    assert entry["total_answers"] == 2
 
 
 def test_reset_user_stats(manager):
@@ -111,7 +105,7 @@ def test_reset_user_stats(manager):
     manager.reset_user_stats(1)
     stats = manager.get_user_stats(1)
     assert stats["correct_answers"] == 0
-    assert stats["total_answers"] == 0
+    assert stats["streak"] == 0
     assert stats["max_streak"] == 0
 
 

@@ -39,7 +39,7 @@ def test_wrong_answer_increments_attempt_and_counts_stats(callbacks, fake_bot, u
     assert state["done"] is False
     stats = callbacks.data_manager.get_user_stats(user.id)
     assert stats["correct_answers"] == 0
-    assert stats["total_answers"] == 1
+    assert stats["streak"] == 0
     assert fake_bot.last("answer_callback_query")[2] == "❌ Неправильно! Попробуй ещё раз."
 
 
@@ -52,7 +52,8 @@ def test_stale_generation_click_is_ignored(callbacks, fake_bot, user, message):
     # Клик по кнопке старого поколения — состояние не меняется, ответ не зачтён.
     handle_answer(make_call(user, message, stale_payload), fake_bot)
     assert state["done"] is False
-    assert callbacks.data_manager.get_user_stats(user.id)["total_answers"] == 1
+    # Число верных слов не изменилось — повторного зачёта не было.
+    assert callbacks.data_manager.get_user_stats(user.id)["correct_answers"] == 0
 
 
 def test_correct_answer_advances_to_next_question(callbacks, fake_bot, user, message):
@@ -150,10 +151,13 @@ def test_stats_screen_shows_counts(callbacks, fake_bot, user, message):
     callbacks.data_manager.update_user_stats(user.id, False, user.username, user.first_name)
     show_stats(make_call(user, message, "stats"), fake_bot)
     text = fake_bot.last("edit_message_text")[1]
-    assert "Правильных ответов: 1" in text
-    assert "Всего ответов: 2" in text
-    assert "50.0%" in text
+    assert "Верно решено слов: 1" in text
+    assert "Текущая серия: 0" in text
+    assert "Максимальная серия: 1" in text
     assert "@tester" in text
+    # Точности и «всего ответов» больше нет: этих данных не храним.
+    assert "Точность" not in text
+    assert "Всего ответов" not in text
 
 
 def test_no_questions_available(callbacks, fake_bot, user, message, monkeypatch):

@@ -201,18 +201,19 @@ def handle_legacy_answer(call, bot):
 
 
 def stats_text(stats: dict) -> str:
-    """Текст экрана статистики."""
+    """
+    Текст экрана статистики.
+
+    Показываем только то, что реально хранится в MongoDB: ник и имя,
+    количество верно решённых слов, текущую и максимальную серию.
+    """
     label = user_label(stats.get("username"), stats.get("firstname"))
-    correct = stats.get("correct_answers", 0)
-    total = stats.get("total_answers", correct)
-    percent = round(correct * 100.0 / total, 1) if total else 0.0
     return (
         "*Ваша статистика*\n\n"
         f"Пользователь: {md_escape(label)}\n"
-        f"Правильных ответов: {correct}\n"
-        f"Всего ответов: {total}\n"
-        f"Точность: {percent}%\n"
-        f"Лучшая серия: {stats.get('max_streak', 0)}"
+        f"Верно решено слов: {stats.get('correct_answers', 0)}\n"
+        f"Текущая серия: {stats.get('streak', 0)}\n"
+        f"Максимальная серия: {stats.get('max_streak', 0)}"
     )
 
 

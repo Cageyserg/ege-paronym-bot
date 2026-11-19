@@ -22,13 +22,6 @@ DEFAULT_DATA_FILE = os.path.join(
 )
 
 
-def accuracy(correct: int, total: int) -> float:
-    """Точность в процентах; 0.0 при отсутствии ответов."""
-    if not total:
-        return 0.0
-    return round(correct * 100.0 / total, 1)
-
-
 class DataManager:
     """Задания из paronyms.json + операции статистики через MongoDB."""
 
@@ -95,7 +88,7 @@ class DataManager:
         return self.storage.record_answer(user_id, is_correct, username, firstname)
 
     def get_leaderboard(self, limit: int = 20) -> list[dict[str, Any]]:
-        """Топ из MongoDB с рангом, отображаемым именем и точностью."""
+        """Топ из MongoDB с рангом и отображаемым именем."""
         rows = self.storage.get_leaderboard(limit)
         return [
             {
@@ -105,9 +98,7 @@ class DataManager:
                 "firstname": row.get("firstname") or "",
                 "display_name": display_name(row),
                 "correct_answers": row.get("correct_answers", 0),
-                "total_answers": row.get("total_answers", 0),
-                "percentage": accuracy(row.get("correct_answers", 0),
-                                       row.get("total_answers", 0)),
+                "streak": row.get("streak", 0),
                 "max_streak": row.get("max_streak", 0),
             }
             for idx, row in enumerate(rows)

@@ -15,7 +15,7 @@ def test_get_user_stats_creates_zero_document(storage):
     row = storage.get_user_stats(1, "u", "Имя")
     assert row["user_id"] == 1
     assert row["correct_answers"] == 0
-    assert row["total_answers"] == 0
+    assert row["streak"] == 0
     assert row["max_streak"] == 0
     assert row["username"] == "u"
     assert row["firstname"] == "Имя"
@@ -31,7 +31,7 @@ def test_get_user_stats_is_idempotent(storage):
 def test_correct_answer_increments_counters(storage):
     storage.record_answer(1, True, "u", "И")
     row = storage.record_answer(1, True, "u", "И")
-    assert (row["correct_answers"], row["total_answers"], row["streak"]) == (2, 2, 2)
+    assert (row["correct_answers"], row["streak"]) == (2, 2)
     assert row["max_streak"] == 2
 
 
@@ -40,7 +40,6 @@ def test_wrong_answer_resets_streak_keeps_max(storage):
     storage.record_answer(1, True)
     row = storage.record_answer(1, False)
     assert row["correct_answers"] == 2
-    assert row["total_answers"] == 3
     assert row["streak"] == 0
     assert row["max_streak"] == 2
 
@@ -115,7 +114,7 @@ def test_reset_user_stats(storage):
     storage.record_answer(1, True, "u", "И")
     storage.reset_user_stats(1)
     row = storage.get_user_stats(1)
-    assert (row["correct_answers"], row["total_answers"], row["max_streak"]) == (0, 0, 0)
+    assert (row["correct_answers"], row["streak"], row["max_streak"]) == (0, 0, 0)
     assert row["username"] == "u"  # ник не теряется
 
 

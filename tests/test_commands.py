@@ -47,7 +47,8 @@ def test_cmd_count_shows_stats(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, user.username, user.first_name)
     commands.cmd_count(_message(user, "/count"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "Правильных ответов: 1" in text
+    assert "Верно решено слов: 1" in text
+    assert "Текущая серия: 1" in text
     assert "@tester" in text
 
 
@@ -141,11 +142,11 @@ def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
     """Реальные документы Mongo: ранги по верным ответам, серия — вторая колонка."""
     storage._col.insert_many([
         {"user_id": 1, "firstname": "Имя1", "username": "",
-         "correct_answers": 112, "total_answers": 130, "streak": 2, "max_streak": 15},
+         "correct_answers": 112, "streak": 2, "max_streak": 15},
         {"user_id": 2, "firstname": "Имя2", "username": "",
-         "correct_answers": 120, "total_answers": 140, "streak": 3, "max_streak": 18},
+         "correct_answers": 120, "streak": 3, "max_streak": 18},
         {"user_id": 3, "firstname": "Имя3", "username": "",
-         "correct_answers": 115, "total_answers": 121, "streak": 0, "max_streak": 16},
+         "correct_answers": 115, "streak": 0, "max_streak": 16},
     ])
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
