@@ -61,7 +61,9 @@ def test_display_width_counts_emoji_as_two_cells():
     from utils.formatting import display_width
 
     assert display_width("🍂") == 2
-    assert display_width("Аскер🍂🌧🦊") == 10
+    # Аскер(5) + 🍂(2) + 🌧(2) + 🦊(2) = 11: 🌧 в таблице Unicode узкий,
+    # но Telegram рисует его двухклеточным, поэтому нужен диапазон-фолбэк.
+    assert display_width("Аскер🍂🌧🦊") == 11
 
 
 def test_display_width_treats_zwj_sequence_as_single_emoji():
@@ -114,3 +116,39 @@ def test_pad_width_uses_cells_not_len():
     assert display_width(pad_width("🍂", 6)) == 6
     assert display_width(pad_width("абв", 6)) == 6
     assert display_width(pad_width("абвгд", 3)) == 5  # короче не режем
+
+
+def test_display_width_counts_narrow_coded_emoji_as_wide():
+    """
+    Часть эмодзи Unicode помечает как «нейтральные» (east_asian_width=N),
+    но Telegram рисует их во всю ширину. Без фолбэка строка уезжает на клетку.
+    """
+    from utils.formatting import display_width
+
+    for emoji in ("🌧", "🌫", "🌤", "🌡", "🗺", "🛠"):
+        assert display_width(emoji) == 2, emoji
+
+
+def test_display_width_keeps_bmp_symbols_narrow():
+    """Символы BMP вроде ◕ и ✿ рендерятся текстом — они действительно узкие."""
+    from utils.formatting import display_width
+
+    assert display_width("◕") == 1
+    assert display_width("✿") == 1
+    assert display_width("Александр (◕‿◕✿)") == 16
+
+
+def test_leaderboard_aligned_with_real_emoji_nicknames():
+    """Ники из настоящей таблицы лидеров не должны сдвигать колонки."""
+    from handlers.callbacks import leaderboard_text
+    from utils.formatting import display_width
+
+    names = ["Пархаева", "Александр (◕‿◕✿)", "Cageyserg", "-M-", "Ксения",
+             "Аскер🍂🌧🦊", "Vill Hightopp", "BacioInfiore 🐝", "Яна"]
+    entries = [
+        {"rank": i, "display_name": name, "correct_answers": 100 - i, "max_streak": i}
+        for i, name in enumerate(names, 1)
+    ]
+    rows = [ln for ln in leaderboard_text(entries).splitlines()
+            if ln.strip()[:1].isdigit()]
+    assert len({display_width(row.split(" |")[0]) for row in rows}) == 1

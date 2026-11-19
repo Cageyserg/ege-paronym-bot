@@ -72,6 +72,35 @@ def _is_zero_width(ch: str) -> bool:
     )
 
 
+# Диапазоны, где Unicode-таблица помечает символы узкими (east_asian_width = N),
+# а Telegram рисует их широкими эмодзи. Проверено на реальных никах из лидерборда:
+# 🌧 (U+1F327) в таблице «нейтральный», но рендерится как двухклеточный.
+#
+# Только SMP: символы BMP вроде ✿ (U+273F) и ◕ (U+25D5) Telegram рисует
+# текстовым начертанием, и они действительно занимают одну клетку.
+_WIDE_EMOJI_RANGES = (
+    (0x1F300, 0x1F5FF),  # Misc Symbols and Pictographs
+    (0x1F600, 0x1F64F),  # Emoticons
+    (0x1F680, 0x1F6FF),  # Transport and Map Symbols
+    (0x1F900, 0x1F9FF),  # Supplemental Symbols and Pictographs
+    (0x1FA70, 0x1FAFF),  # Symbols and Pictographs Extended-A
+)
+
+
+def _is_wide_emoji(ch: str) -> bool:
+    """
+    Широкий ли символ в рендере Telegram.
+
+    `unicodedata.east_asian_width` знает не всё: 1159 эмодзи в SMP помечены там
+    как «нейтральные», хотя рисуются во всю ширину. Поэтому дополнительно
+    проверяем диапазоны, а не только таблицу.
+    """
+    if unicodedata.east_asian_width(ch) in ("W", "F"):
+        return True
+    cp = ord(ch)
+    return any(start <= cp <= end for start, end in _WIDE_EMOJI_RANGES)
+
+
 def _is_regional_indicator(ch: str) -> bool:
     """Пара таких символов рисуется одним флагом шириной в две клетки."""
     return 0x1F1E6 <= ord(ch) <= 0x1F1FF
@@ -132,11 +161,12 @@ def display_width(text: str) -> int:
     """
     width = 0
     for cluster in clusters(text):
-        if any(unicodedata.east_asian_width(ch) in ("W", "F") for ch in cluster):
+        base = cluster[0]
+        if _is_wide_emoji(base) or any(_is_wide_emoji(ch) for ch in cluster):
             width += 2
         elif "\ufe0f" in cluster:
             width += 2  # VS16 включает эмблемное начертание — оно широкое
-        elif _is_regional_indicator(cluster[0]):
+        elif _is_regional_indicator(base):
             width += 2  # флаг целиком
         else:
             width += 1
