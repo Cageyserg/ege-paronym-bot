@@ -283,7 +283,7 @@ def leaderboard_entry(entry: dict, widths: tuple[int, int, int] | None = None) -
     Одна строка таблицы лидеров, выровненная по колонкам.
 
     Пример:
-         3. Cageyserg     —  112 | 🔗  15
+         3. Cageyserg          112 | 🔗   15
 
     Слева — всего верных ответов, справа после 🔗 — лучшая серия подряд.
     """
@@ -292,7 +292,7 @@ def leaderboard_entry(entry: dict, widths: tuple[int, int, int] | None = None) -
     correct = str(entry.get("correct_answers", 0)).rjust(correct_width)
     streak = str(entry.get("max_streak", 0)).rjust(streak_width)
     rank = str(entry.get("rank", 0)).rjust(rank_width)
-    return f"{rank}. {name} — {correct} | 🔗 {streak}"
+    return f"{rank}. {name} {correct} | 🔗 {streak}"
 
 
 def leaderboard_text(entries) -> str:
