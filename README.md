@@ -44,7 +44,7 @@ ege-paronym-bot/
 │   └── formatting.py        # экранирование Markdown и подписи пользователей
 ├── data/
 │   └── paronyms.json        # задания
-├── tests/                   # pytest: 98 тестов, покрытие ~92%
+├── tests/                   # pytest: 101 тест, покрытие ~92%
 └── .github/workflows/ci.yml # линтер + тесты на 3.11 и 3.12
 ```
 
@@ -87,6 +87,21 @@ gunicorn web_app:app --workers 1 --threads 8 --bind 0.0.0.0:$PORT
 
 - Статистика в MongoDB, поэтому воркеры независимы: каждый ответ пишется
   атомарным апдейтом, кэша в памяти нет.
+
+> **Start Command на Render.** Если сервис создан вручную (а не из
+> `render.yaml`), команда запуска берётся из дашборда и перекрывает
+> `render.yaml`. Правильное значение:
+>
+> ```
+> gunicorn web_app:app --workers 1 --threads 8 --bind 0.0.0.0:$PORT
+> ```
+>
+> Старое значение `gunicorn render_main:app` тоже работает: `render_main.py`
+> оставлен как алиас на `web_app.app`, чтобы не ломать уже настроенный сервис.
+>
+> **Версия Python.** Render берёт её из переменной `PYTHON_VERSION` или файла
+> `.python-version` (сейчас зафиксирован 3.11.9). Если в дашборде задана
+> `PYTHON_VERSION`, она имеет приоритет над файлом.
 - После первого деплоя установите webhook:
   ```bash
   curl -X POST -H "X-Admin-Token: $ADMIN_TOKEN" https://<app>.onrender.com/set-webhook

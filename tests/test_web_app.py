@@ -134,3 +134,30 @@ def test_delete_webhook_requires_admin(app_client, monkeypatch):
     client, bot = app_client
     assert client.post("/delete-webhook").status_code == 403
     assert client.post("/delete-webhook", headers={"X-Admin-Token": "admin-pass"}).status_code == 200
+
+
+def test_render_main_exposes_same_app():
+    """
+    Render запускает `gunicorn render_main:app` (Start Command из дашборда).
+
+    render_main обязан отдавать то же приложение, что и web_app, иначе
+    деплой падает с ModuleNotFoundError.
+    """
+    import render_main
+    import web_app
+
+    assert render_main.app is web_app.app
+
+
+def test_procfile_points_to_web_app():
+    with open("Procfile", encoding="utf-8") as f:
+        assert "web_app:app" in f.read()
+
+
+def test_runtime_and_python_version_agree():
+    """Render читает .python-version, а .runtime.txt — для совместимости."""
+    with open(".runtime.txt", encoding="utf-8") as f:
+        runtime = f.read().strip().removeprefix("python-")
+    with open(".python-version", encoding="utf-8") as f:
+        pinned = f.read().strip()
+    assert runtime == pinned == "3.11.9"

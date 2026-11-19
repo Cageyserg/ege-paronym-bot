@@ -1,8 +1,6 @@
 #!/bin/bash
 # Build script for Render
 
-# Install dependencies
-pip install -r requirements.txt
+set -e
 
-# Ensure data directory exists
-mkdir -p data
+pip install -r requirements.txt
