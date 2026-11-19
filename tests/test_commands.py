@@ -60,7 +60,7 @@ def test_cmd_top_lists_users(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "1. Вася — 1 | 🔥 1" in text
+    assert "1. Вася — 1 | 🔗 1" in text
 
 
 def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
@@ -73,15 +73,15 @@ def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
     # 4 верных всего, серия 3 — максимум подряд (текущая после ошибки 1).
-    assert "1. Вася — 4 | 🔥 3" in text
-    assert "🔥 1" not in text
+    assert "1. Вася — 4 | 🔗 3" in text
+    assert "🔗 1" not in text
 
 
 def test_cmd_top_legend_explains_columns(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "верных | 🔥 серия — максимум подряд" in text
+    assert "верных | 🔗 серия — максимум подряд" in text
 
 
 def test_cmd_top_escapes_markdown(commands, fake_bot, user, manager):
@@ -103,14 +103,14 @@ def test_commands_survive_telegram_errors(commands, fake_bot, user, monkeypatch)
 
 
 def test_leaderboard_entry_matches_reference_format():
-    """Формат строки: `3. Cageyserg — 112 | 🔥 15`."""
+    """Формат строки: `3. Cageyserg — 112 | 🔗 15`."""
     from handlers.callbacks import leaderboard_entry
 
     line = leaderboard_entry({
         "rank": 3, "display_name": "Cageyserg",
         "correct_answers": 112, "max_streak": 15,
     })
-    assert line == "3. Cageyserg — 112 | 🔥 15"
+    assert line == "3. Cageyserg — 112 | 🔗 15"
 
 
 def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
@@ -127,7 +127,7 @@ def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
     text = fake_bot.last("send_message")[2]
     lines = [ln for ln in text.splitlines() if ln[:1].isdigit()]
     assert lines == [
-        "1. Имя2 — 120 | 🔥 18",
-        "2. Имя3 — 115 | 🔥 16",
-        "3. Имя1 — 112 | 🔥 15",
+        "1. Имя2 — 120 | 🔗 18",
+        "2. Имя3 — 115 | 🔗 16",
+        "3. Имя1 — 112 | 🔗 15",
     ]
