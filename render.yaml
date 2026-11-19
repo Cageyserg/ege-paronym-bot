@@ -1,14 +1,24 @@
 services:
   - type: web
     name: ege-paronym-bot
-    env: python
+    runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn render_main:app --bind 0.0.0.0:$PORT
+    # Статистика в MongoDB, поэтому воркеры независимы; 1 воркер — для free-плана.
+    startCommand: gunicorn web_app:app --workers 1 --threads 8 --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: BOT_TOKEN
         sync: false
       - key: WEBHOOK_URL
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: ADMIN_TOKEN
         generateValue: true
       - key: MONGODB_URI
         sync: false
+      - key: MONGODB_DB
+        value: ege_paronym_bot

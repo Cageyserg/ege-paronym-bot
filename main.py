@@ -1,105 +1,61 @@
 """
-Главный файл бота для подготовки к ЕГЭ по паронимам.
-Использует pyTelegramBotAPI (telebot).
-Архитектура: все данные в RAM, SQLite только для персистентности.
+Запуск бота в режиме long polling (локально, VPS).
+
+В памяти живёт только состояние текущей тренировки; статистика пишется
+напрямую в MongoDB.
 """
 
-import sys
-import signal
-import telebot
-import logging
-
-from config import BOT_TOKEN
 import atexit
+import logging
+import signal
+import sys
 
-# Настройка логирования
+from config import is_configured, is_storage_configured
+from core.bot_core import build_bot, init_storage, shutdown_storage
+from utils.mongo_database import StorageUnavailable
+
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s'
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
-from utils.data_manager import init_data_manager, data_manager
-from utils.database import Database
-from handlers.start import cmd_start, cmd_top, cmd_count
-from handlers.callbacks import (
-    show_main_menu, start_training,
-    show_stats, show_leaderboard, handle_answer, handle_legacy_answer
-)
-from handlers.text_handler import handle_text_check
+bot = build_bot()
+storage = None
+if is_storage_configured():
+    try:
+        storage = init_storage()
+    except StorageUnavailable as e:
+        logger.error("MongoDB недоступна: %s", e)
 
-# Создаём экземпляр бота
-bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
+# Единственная регистрация остановки: atexit сработает и на SIGTERM/SIGINT.
+if storage is not None:
+    atexit.register(shutdown_storage, storage)
+atexit.register(bot.stop_polling)
 
-# Инициализация DataManager с БД (кэширует user_stats в RAM)
-from config import MONGODB_URI
-if MONGODB_URI:
-    from utils.mongo_database import MongoDatabase
-    db = MongoDatabase(MONGODB_URI)
-else:
-    db = Database()
-init_data_manager(db)
-data_manager.start_flush_loop()
 
-# Graceful shutdown: atexit вызовет stop_flush_loop, signal handler просто ставит выход
 def _signal_handler(signum, frame):
     raise SystemExit(0)
+
 
 signal.signal(signal.SIGTERM, _signal_handler)
 signal.signal(signal.SIGINT, _signal_handler)
 
-# Единственная регистрация flush-а — здесь (не дублировать в utils/data_manager.py)
-atexit.register(data_manager.stop_flush_loop)
-atexit.register(bot.stop_polling)
-# ==================== Handlers ====================
-
-@bot.message_handler(commands=['start'])
-def start_handler(message):
-    cmd_start(message, bot)
-
-@bot.message_handler(commands=['top'])
-def top_handler(message):
-    cmd_top(message, bot)
-
-@bot.message_handler(commands=['count'])
-def count_handler(message):
-    cmd_count(message, bot)
-
-# Обработчик текстовых сообщений (не используется — ответы через кнопки)
-@bot.message_handler(func=lambda message: True, content_types=['text'])
-def text_handler(message):
-    if not message.text.startswith('/'):
-        handle_text_check(message, bot)
-
-# Callback обработчики
-@bot.callback_query_handler(func=lambda call: call.data == "main_menu")
-def main_menu_handler(call):
-    show_main_menu(call, bot)
-
-@bot.callback_query_handler(func=lambda call: call.data == "training_start")
-def training_start_handler(call):
-    start_training(call, bot)
-
-@bot.callback_query_handler(func=lambda call: call.data == "stats")
-def stats_handler(call):
-    show_stats(call, bot)
-
-@bot.callback_query_handler(func=lambda call: call.data == "leaderboard")
-def leaderboard_handler(call):
-    show_leaderboard(call, bot)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("a:"))
-def answer_handler(call):
-    handle_answer(call, bot)
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("answer_"))
-def legacy_answer_handler(call):
-    handle_legacy_answer(call, bot)
-
 
 if __name__ == "__main__":
-    sys.stdout.reconfigure(encoding='utf-8')
-    print("Бот запущен! (кэширование активно, flush каждые 10с)", flush=True)
+    sys.stdout.reconfigure(encoding="utf-8")
+    if not is_configured():
+        logger.error("BOT_TOKEN не задан. Скопируйте .env.example в .env и укажите токен.")
+        raise SystemExit(1)
+    if storage is None:
+        logger.error(
+            "MONGODB_URI не задан или MongoDB недоступна. Статистика хранится "
+            "только в MongoDB — без неё бот не запускается."
+        )
+        raise SystemExit(1)
+    logger.info("Бот запущен (long polling, статистика в MongoDB)")
     try:
-        bot.infinity_polling()
+        bot.infinity_polling(skip_pending=True)
     except Exception as e:
-        print(f"Ошибка: {e}", flush=True)
+        logger.error("Ошибка polling: %s", e, exc_info=True)
+        raise SystemExit(1) from e

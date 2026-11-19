@@ -1,106 +1,87 @@
 """
-Обработчики команд бота.
+Команды бота: /start, /top, /count, /help.
 """
 
 import logging
-from keyboards.inline import get_main_menu_keyboard, get_leaderboard_keyboard, get_back_to_menu_keyboard
-from handlers.callbacks import show_stats, leaderboard_message_ids, md_escape
-# Используем глобальный data_manager (инициализируется в main.py / render_main.py)
+
+from handlers.callbacks import send_leaderboard, stats_text
+from keyboards.inline import get_back_to_menu_keyboard, get_main_menu_keyboard
 from utils.data_manager import data_manager
 
 logger = logging.getLogger(__name__)
 
+WELCOME_TEXT = (
+    "👋 Добро пожаловать в бота для подготовки к ЕГЭ!\n\n"
+    "Этот бот поможет вам освоить паронимы и лексические нормы (Задание 5).\n\n"
+    "*Выберите режим работы:*"
+)
+
+HELP_TEXT = (
+    "*Команды бота*\n\n"
+    "/start — главное меню\n"
+    "/top — таблица лидеров (топ-20)\n"
+    "/count — ваша статистика\n"
+    "/help — эта справка"
+)
+
+
+def _notify_failure(bot, chat_id: int, text: str) -> None:
+    """Сообщает пользователю о сбое хранилища, не падая повторно."""
+    try:
+        bot.send_message(chat_id, text)
+    except Exception as e:
+        logger.error("Не удалось отправить сообщение об ошибке: %s", e)
+
 
 def cmd_start(message, bot):
-    """Обрабатывает команду /start и показывает главное меню."""
+    """Показывает приветствие и главное меню."""
     try:
-        logger.info(f"Получена команда /start от user_id={message.from_user.id}")
+        logger.info("/start от user_id=%s", message.from_user.id)
         bot.send_message(
             message.chat.id,
-            "👋 Добро пожаловать в бота для подготовки к ЕГЭ!\n\n"
-            "Этот бот поможет вам освоить паронимы и лексические нормы (Задание 5).\n\n"
-            "*Выберите режим работы:*",
+            WELCOME_TEXT,
             reply_markup=get_main_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode="Markdown",
         )
-        logger.info(f"Сообщение отправлено в chat_id={message.chat.id}")
     except Exception as e:
-        logger.error(f"Ошибка при отправке сообщения: {e}", exc_info=True)
+        logger.error("Ошибка отправки приветствия: %s", e, exc_info=True)
+
+
+def cmd_help(message, bot):
+    """Показывает справку по командам."""
+    try:
+        bot.send_message(
+            message.chat.id,
+            HELP_TEXT,
+            reply_markup=get_back_to_menu_keyboard(),
+            parse_mode="Markdown",
+        )
+    except Exception as e:
+        logger.error("Ошибка отправки справки: %s", e, exc_info=True)
 
 
 def cmd_top(message, bot):
-    """Обрабатывает команду /top и показывает таблицу лидеров (топ 20)."""
+    """Показывает таблицу лидеров (топ-20)."""
     try:
-        logger.info(f"Получена команда /top от user_id={message.from_user.id}")
-        chat_id = message.chat.id
-        leaderboard = data_manager.get_leaderboard(limit=20)
-
-        # Удаляем старое сообщение таблицы лидеров, если оно есть
-        if chat_id in leaderboard_message_ids:
-            try:
-                bot.delete_message(chat_id, leaderboard_message_ids[chat_id])
-            except Exception as e:
-                pass  # Сообщение уже удалено или недоступно
-            del leaderboard_message_ids[chat_id]
-
-        if not leaderboard:
-            msg = bot.send_message(
-                chat_id,
-                "*Таблица лидеров*\n\n"
-                "Пока нет участников. Станьте первым!",
-                reply_markup=get_main_menu_keyboard(),
-                parse_mode='Markdown'
-            )
-            leaderboard_message_ids[chat_id] = msg.message_id
-            return
-
-        text = "*Таблица лидеров (топ 20)*\n\n"
-        for entry in leaderboard:
-            name = md_escape(entry.get("display_name") or entry.get("username") or "Без имени")
-            text += f"{entry['rank']}. {name} — {entry['correct_answers']}\n"
-
-        msg = bot.send_message(
-            chat_id,
-            text,
-            reply_markup=get_leaderboard_keyboard(),
-            parse_mode='Markdown'
-        )
-        leaderboard_message_ids[chat_id] = msg.message_id
-        logger.info(f"Таблица лидеров отправлена в chat_id={chat_id}")
+        logger.info("/top от user_id=%s", message.from_user.id)
+        send_leaderboard(bot, message.chat.id)
     except Exception as e:
-        logger.error(f"Ошибка при отправке таблицы лидеров: {e}", exc_info=True)
+        logger.error("Ошибка отправки таблицы лидеров: %s", e, exc_info=True)
+        _notify_failure(bot, message.chat.id, "Таблица лидеров временно недоступна.")
 
 
 def cmd_count(message, bot):
-    """Обрабатывает команду /count и показывает количество правильных ответов."""
+    """Показывает статистику пользователя."""
     try:
-        logger.info(f"Получена команда /count от user_id={message.from_user.id}")
-        user_id = message.from_user.id
-        username = message.from_user.username
-        firstname = message.from_user.first_name
-        stats = data_manager.get_user_stats(user_id, username, firstname)
-
-        correct = stats['correct_answers']
-        display_username = stats.get('username', username or 'Anonymous')
-        display_firstname = stats.get('firstname', firstname or '')
-
-        if display_firstname:
-            user_info = f"@{display_username} ({display_firstname})"
-        else:
-            user_info = f"@{display_username}"
-
-        text = (
-            f"*Ваша статистика*\n\n"
-            f"Пользователь: {user_info}\n"
-            f"Правильных ответов: {correct}"
-        )
-
+        logger.info("/count от user_id=%s", message.from_user.id)
+        user = message.from_user
+        stats = data_manager.get_user_stats(user.id, user.username, user.first_name)
         bot.send_message(
             message.chat.id,
-            text,
+            stats_text(stats),
             reply_markup=get_back_to_menu_keyboard(),
-            parse_mode='Markdown'
+            parse_mode="Markdown",
         )
-        logger.info(f"Статистика отправлена в chat_id={message.chat.id}")
     except Exception as e:
-        logger.error(f"Ошибка при отправке статистики: {e}", exc_info=True)
+        logger.error("Ошибка отправки статистики: %s", e, exc_info=True)
+        _notify_failure(bot, message.chat.id, "Статистика временно недоступна. Попробуйте позже.")
