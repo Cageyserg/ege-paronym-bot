@@ -22,6 +22,7 @@ from keyboards.inline import (
 from utils.data_manager import data_manager
 from utils.formatting import (
     code_safe,
+    display_width,
     md_escape,
     pad_width,
     truncate_width,
@@ -238,11 +239,13 @@ def show_stats(call, bot):
     )
 
 
-# Ширины колонок в клетках моноширинного шрифта.
+# Максимальная ширина имени в клетках моноширинного шрифта.
 # Имя обрезается, цифры прижимаются вправо — тогда столбцы не «пляшут».
 NAME_WIDTH = 18
-CORRECT_WIDTH = 4
-STREAK_WIDTH = 4
+
+# Ширины числовых колонок не фиксированы: они подстраиваются под самые длинные
+# значения в текущей таблице, поэтому 5-6-значные счётчики не ломают выравнивание.
+NUM_WIDTH = 4
 
 
 def leaderboard_name(entry: dict) -> str:
@@ -251,19 +254,45 @@ def leaderboard_name(entry: dict) -> str:
     return truncate_width(code_safe(raw), NAME_WIDTH)
 
 
-def leaderboard_entry(entry: dict) -> str:
+def _column_widths(entries) -> tuple[int, int, int]:
+    """
+    Ширины колонок под конкретную таблицу.
+
+    Ранг и счётчики меряются по фактическим значениям, поэтому появление
+    «1000» или «100000» не сдвигает столбцы относительно коротких чисел.
+    """
+    rank_width = max((display_width(str(entry.get("rank", 0))) for entry in entries),
+                     default=1)
+    correct_width = max(
+        (display_width(str(entry.get("correct_answers", 0))) for entry in entries),
+        default=1,
+    )
+    streak_width = max(
+        (display_width(str(entry.get("max_streak", 0))) for entry in entries),
+        default=1,
+    )
+    return (
+        max(rank_width, 1),
+        max(correct_width, NUM_WIDTH),
+        max(streak_width, NUM_WIDTH),
+    )
+
+
+def leaderboard_entry(entry: dict, widths: tuple[int, int, int] | None = None) -> str:
     """
     Одна строка таблицы лидеров, выровненная по колонкам.
 
     Пример:
-        3. Cageyserg     —  112 | 🔗  15
+         3. Cageyserg     —  112 | 🔗  15
 
     Слева — всего верных ответов, справа после 🔗 — лучшая серия подряд.
     """
+    rank_width, correct_width, streak_width = widths or _column_widths([entry])
     name = pad_width(leaderboard_name(entry), NAME_WIDTH)
-    correct = str(entry.get("correct_answers", 0)).rjust(CORRECT_WIDTH)
-    streak = str(entry.get("max_streak", 0)).rjust(STREAK_WIDTH)
-    return f"{str(entry['rank']).rjust(2)}. {name} — {correct} | 🔗 {streak}"
+    correct = str(entry.get("correct_answers", 0)).rjust(correct_width)
+    streak = str(entry.get("max_streak", 0)).rjust(streak_width)
+    rank = str(entry.get("rank", 0)).rjust(rank_width)
+    return f"{rank}. {name} — {correct} | 🔗 {streak}"
 
 
 def leaderboard_text(entries) -> str:
@@ -272,13 +301,18 @@ def leaderboard_text(entries) -> str:
 
     Колонки выравниваются пробелами внутри ```-блока: в обычном тексте
     Telegram использует пропорциональный шрифт, и цифры встают лесенкой.
+    Ширины подбираются под конкретные значения, поэтому таблица остаётся
+    ровной при любом числе участников и любой длине имён.
+
     Для каждого участника показываются два показателя:
     - всего верных ответов;
     - лучшая серия (🔗) — максимальное число верных ответов подряд.
     """
+    entries = list(entries)
     if not entries:
         return "*🏆 Таблица лидеров*\n\nПока нет участников. Станьте первым!"
-    rows = "\n".join(leaderboard_entry(entry) for entry in entries)
+    widths = _column_widths(entries)
+    rows = "\n".join(leaderboard_entry(entry, widths) for entry in entries)
     return (
         "*🏆 Таблица лидеров*\n\n"
         f"```\n{rows}\n```\n\n"

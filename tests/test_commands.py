@@ -113,7 +113,7 @@ def test_leaderboard_entry_matches_reference_format():
         "rank": 3, "display_name": "Cageyserg",
         "correct_answers": 112, "max_streak": 15,
     })
-    assert line == " 3. Cageyserg          —  112 | 🔗   15"
+    assert line == "3. Cageyserg          —  112 | 🔗   15"
 
 
 def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
@@ -130,9 +130,9 @@ def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
     text = fake_bot.last("send_message")[2]
     lines = [ln for ln in text.splitlines() if ln.strip()[:1].isdigit()]
     assert lines == [
-        " 1. Имя2               —  120 | 🔗   18",
-        " 2. Имя3               —  115 | 🔗   16",
-        " 3. Имя1               —  112 | 🔗   15",
+        "1. Имя2               —  120 | 🔗   18",
+        "2. Имя3               —  115 | 🔗   16",
+        "3. Имя1               —  112 | 🔗   15",
     ]
 
 
@@ -157,14 +157,16 @@ def test_leaderboard_columns_are_aligned():
 
 def test_leaderboard_aligns_double_digit_ranks():
     """Ранг 10 не должен сдвигать колонку относительно ранга 1."""
-    from handlers.callbacks import leaderboard_entry
+    from handlers.callbacks import leaderboard_text
     from utils.formatting import display_width
 
-    first = leaderboard_entry({"rank": 1, "display_name": "Яна",
-                               "correct_answers": 1, "max_streak": 1})
-    tenth = leaderboard_entry({"rank": 10, "display_name": "Яна",
-                               "correct_answers": 1, "max_streak": 1})
-    assert display_width(first.split("—")[0]) == display_width(tenth.split("—")[0])
+    entries = [{"rank": rank, "display_name": "Яна",
+                "correct_answers": 1, "max_streak": 1} for rank in range(1, 11)]
+    rows = [ln for ln in leaderboard_text(entries).splitlines()
+            if ln.strip()[:1].isdigit()]
+    assert len(rows) == 10
+    widths = {display_width(row.split("—")[0]) for row in rows}
+    assert len(widths) == 1
 
 
 def test_leaderboard_long_name_is_truncated():
@@ -182,3 +184,45 @@ def test_leaderboard_long_name_is_truncated():
     )
     assert "…" in line
     assert NAME_WIDTH == 18
+
+
+def test_leaderboard_handles_six_digit_counters():
+    """Числа длиннее 4 цифр не ломают колонки: ширины считаются по факту."""
+    from handlers.callbacks import leaderboard_text
+    from utils.formatting import display_width
+
+    entries = [
+        {"rank": 1, "display_name": "Мега", "correct_answers": 123456, "max_streak": 98765},
+        {"rank": 2, "display_name": "Яна", "correct_answers": 1, "max_streak": 1},
+    ]
+    rows = [ln for ln in leaderboard_text(entries).splitlines()
+            if ln.strip()[:1].isdigit()]
+    assert len({display_width(row.split("—")[0]) for row in rows}) == 1
+    assert "123456" in rows[0]
+    assert "     1" in rows[1]
+
+
+def test_leaderboard_handles_emoji_clusters():
+    """Составные эмодзи считаются как один символ, а не как 7 кодовых точек."""
+    from handlers.callbacks import leaderboard_text
+    from utils.formatting import display_width
+
+    entries = [
+        {"rank": 1, "display_name": "👨‍👩‍👧‍👦 Семья", "correct_answers": 42, "max_streak": 7},
+        {"rank": 2, "display_name": "🇷🇺 Россия", "correct_answers": 41, "max_streak": 6},
+        {"rank": 3, "display_name": "⚔️ Мечи", "correct_answers": 40, "max_streak": 5},
+    ]
+    rows = [ln for ln in leaderboard_text(entries).splitlines()
+            if ln.strip()[:1].isdigit()]
+    assert len({display_width(row.split("—")[0]) for row in rows}) == 1
+
+
+def test_leaderboard_single_user_is_still_aligned():
+    """Один участник: таблица всё равно выровнена."""
+    from handlers.callbacks import leaderboard_text
+    from utils.formatting import display_width
+
+    text = leaderboard_text([{"rank": 1, "display_name": "Яна",
+                              "correct_answers": 7, "max_streak": 3}])
+    row = [ln for ln in text.splitlines() if ln.strip()[:1].isdigit()][0]
+    assert display_width(row.split("—")[0]) == 22
