@@ -235,6 +235,11 @@ def show_stats(call, bot):
 # Максимальная длина имени в символах: длинные ники не должны растягивать строку.
 NAME_WIDTH = 24
 
+# Отбивка между показателями и именем. Только пробелы: они, в отличие от букв,
+# в пропорциональном шрифте Telegram одинаковой ширины, поэтому выравнивание
+# числовых колонок не страдает.
+NAME_GAP = "     "
+
 
 def leaderboard_name(entry: dict) -> str:
     """Имя участника: экранировано под Markdown и обрезано по длине."""
@@ -279,7 +284,7 @@ def leaderboard_entry(entry: dict, widths: tuple[int, int, int] | None = None) -
     correct = str(entry.get("correct_answers", 0)).rjust(correct_width)
     streak = str(entry.get("max_streak", 0)).rjust(streak_width)
     name = md_escape(leaderboard_name(entry))
-    return f"{rank}. {correct} | 🔗 {streak} · *{name}*"
+    return f"{rank}. {correct} | 🔗 {streak}{NAME_GAP}· *{name}*"
 
 
 def leaderboard_text(entries) -> str:

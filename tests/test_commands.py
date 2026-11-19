@@ -60,7 +60,7 @@ def test_cmd_top_lists_users(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "1. 1 | 🔗 1 · *Вася*" in text
+    assert "1. 1 | 🔗 1     · *Вася*" in text
 
 
 def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
@@ -73,7 +73,7 @@ def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
     # 4 верных всего, серия 3 — максимум подряд (текущая после ошибки 1).
-    assert "1. 4 | 🔗 3 · *Вася*" in text
+    assert "1. 4 | 🔗 3     · *Вася*" in text
     assert "🔗 1 ·" not in text
 
 
@@ -112,7 +112,7 @@ def test_leaderboard_entry_format():
         "rank": 3, "display_name": "Cageyserg",
         "correct_answers": 112, "max_streak": 15,
     })
-    assert line == "3. 112 | 🔗 15 · *Cageyserg*"
+    assert line == "3. 112 | 🔗 15     · *Cageyserg*"
 
 
 def test_leaderboard_has_no_code_block():
@@ -125,14 +125,16 @@ def test_leaderboard_has_no_code_block():
     assert "`" not in text
 
 
-def test_leaderboard_has_no_monospace_padding():
-    """Пробелов для выравнивания больше нет — в пропорциональном шрифте они бесполезны."""
-    from handlers.callbacks import leaderboard_text
+def test_leaderboard_separates_name_with_wide_gap():
+    """Между серией и именем — заметная отбивка, иначе строка читается слитно."""
+    from handlers.callbacks import NAME_GAP, leaderboard_text
 
     text = leaderboard_text([{"rank": 1, "display_name": "Яна",
                               "correct_answers": 7, "max_streak": 3}])
     row = [ln for ln in text.splitlines() if ln.startswith("1.")][0]
-    assert "  " not in row
+    assert row.endswith(f"{NAME_GAP}· *Яна*")
+    assert len(NAME_GAP) >= 4
+    assert NAME_GAP.strip() == ""  # только пробелы, иначе выравнивание поедет
 
 
 def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
@@ -149,9 +151,9 @@ def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
     text = fake_bot.last("send_message")[2]
     lines = [ln for ln in text.splitlines() if ln[:1].isdigit()]
     assert lines == [
-        "1. 120 | 🔗 18 · *Имя2*",
-        "2. 115 | 🔗 16 · *Имя3*",
-        "3. 112 | 🔗 15 · *Имя1*",
+        "1. 120 | 🔗 18     · *Имя2*",
+        "2. 115 | 🔗 16     · *Имя3*",
+        "3. 112 | 🔗 15     · *Имя1*",
     ]
 
 
@@ -176,8 +178,8 @@ def test_leaderboard_handles_six_digit_counters():
         {"rank": 1, "display_name": "Мега", "correct_answers": 123456, "max_streak": 98765},
         {"rank": 2, "display_name": "Яна", "correct_answers": 1, "max_streak": 1},
     ])
-    assert "1. 123456 | 🔗 98765 · *Мега*" in text
-    assert "2.      1 | 🔗     1 · *Яна*" in text
+    assert "1. 123456 | 🔗 98765     · *Мега*" in text
+    assert "2.      1 | 🔗     1     · *Яна*" in text
 
 
 def test_leaderboard_handles_emoji_nicknames():
@@ -188,8 +190,8 @@ def test_leaderboard_handles_emoji_nicknames():
         {"rank": 1, "display_name": "Аскер🍂🌧🦊", "correct_answers": 40, "max_streak": 8},
         {"rank": 2, "display_name": "BacioInfiore 🐝", "correct_answers": 5, "max_streak": 4},
     ])
-    assert "1. 40 | 🔗 8 · *Аскер🍂🌧🦊*" in text
-    assert "2.  5 | 🔗 4 · *BacioInfiore 🐝*" in text
+    assert "1. 40 | 🔗 8     · *Аскер🍂🌧🦊*" in text
+    assert "2.  5 | 🔗 4     · *BacioInfiore 🐝*" in text
 
 
 def test_leaderboard_numeric_prefix_has_equal_length():
