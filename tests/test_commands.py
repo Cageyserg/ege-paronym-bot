@@ -60,7 +60,8 @@ def test_cmd_top_lists_users(commands, fake_bot, user, manager):
     manager.update_user_stats(user.id, True, "vasya", "Вася")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "1. Вася — 1 | 🔗 1" in text
+    assert "Вася" in text
+    assert "—    1 | 🔗    1" in text
 
 
 def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
@@ -73,8 +74,8 @@ def test_cmd_top_shows_max_streak(commands, fake_bot, user, manager):
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
     # 4 верных всего, серия 3 — максимум подряд (текущая после ошибки 1).
-    assert "1. Вася — 4 | 🔗 3" in text
-    assert "🔗 1" not in text
+    assert "—    4 | 🔗    3" in text
+    assert "🔗    1" not in text
 
 
 def test_cmd_top_legend_explains_columns(commands, fake_bot, user, manager):
@@ -84,11 +85,13 @@ def test_cmd_top_legend_explains_columns(commands, fake_bot, user, manager):
     assert "верных | 🔗 серия — максимум подряд" in text
 
 
-def test_cmd_top_escapes_markdown(commands, fake_bot, user, manager):
-    manager.update_user_stats(user.id, True, "bad_name", "*Вася*")
+def test_cmd_top_sanitizes_backticks_in_code_block(commands, fake_bot, user, manager):
+    """Имя внутри ```-блока не должно содержать обратных кавычек и переводов строк."""
+    manager.update_user_stats(user.id, True, "bad_name", "Ва`ся")
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    assert "\\*Вася\\*" in text
+    assert "`" not in text.split("```")[1]
+    assert "Ва'ся" in text
 
 
 def test_commands_survive_telegram_errors(commands, fake_bot, user, monkeypatch):
@@ -103,14 +106,14 @@ def test_commands_survive_telegram_errors(commands, fake_bot, user, monkeypatch)
 
 
 def test_leaderboard_entry_matches_reference_format():
-    """Формат строки: `3. Cageyserg — 112 | 🔗 15`."""
+    """Формат строки, выровненной по колонкам."""
     from handlers.callbacks import leaderboard_entry
 
     line = leaderboard_entry({
         "rank": 3, "display_name": "Cageyserg",
         "correct_answers": 112, "max_streak": 15,
     })
-    assert line == "3. Cageyserg — 112 | 🔗 15"
+    assert line == " 3. Cageyserg          —  112 | 🔗   15"
 
 
 def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
@@ -125,9 +128,57 @@ def test_cmd_top_orders_by_correct_answers(commands, fake_bot, user, storage):
     ])
     commands.cmd_top(_message(user, "/top"), fake_bot)
     text = fake_bot.last("send_message")[2]
-    lines = [ln for ln in text.splitlines() if ln[:1].isdigit()]
+    lines = [ln for ln in text.splitlines() if ln.strip()[:1].isdigit()]
     assert lines == [
-        "1. Имя2 — 120 | 🔗 18",
-        "2. Имя3 — 115 | 🔗 16",
-        "3. Имя1 — 112 | 🔗 15",
+        " 1. Имя2               —  120 | 🔗   18",
+        " 2. Имя3               —  115 | 🔗   16",
+        " 3. Имя1               —  112 | 🔗   15",
     ]
+
+
+def test_leaderboard_columns_are_aligned():
+    """Префикс «ранг. имя» одинаковой ширины — иначе цифры встают лесенкой."""
+    from handlers.callbacks import leaderboard_entry
+    from utils.formatting import display_width
+
+    names = ["Пархаева", "Александр (◕‿◕✿)", "Cageyserg", "-M-", "Аскер🍂🌧🦊",
+             "Vill Hightopp", "BacioInfiore 🐝", "Яна"]
+    widths = {
+        display_width(
+            leaderboard_entry({
+                "rank": rank, "display_name": name,
+                "correct_answers": rank * 7, "max_streak": rank,
+            }).split("—")[0]
+        )
+        for rank, name in enumerate(names, 1)
+    }
+    assert len(widths) == 1
+
+
+def test_leaderboard_aligns_double_digit_ranks():
+    """Ранг 10 не должен сдвигать колонку относительно ранга 1."""
+    from handlers.callbacks import leaderboard_entry
+    from utils.formatting import display_width
+
+    first = leaderboard_entry({"rank": 1, "display_name": "Яна",
+                               "correct_answers": 1, "max_streak": 1})
+    tenth = leaderboard_entry({"rank": 10, "display_name": "Яна",
+                               "correct_answers": 1, "max_streak": 1})
+    assert display_width(first.split("—")[0]) == display_width(tenth.split("—")[0])
+
+
+def test_leaderboard_long_name_is_truncated():
+    """Слишком длинное имя обрезается, чтобы не ломать колонки."""
+    from handlers.callbacks import NAME_WIDTH, leaderboard_entry
+    from utils.formatting import display_width
+
+    line = leaderboard_entry({
+        "rank": 1, "display_name": "Очень-очень длинное имя пользователя",
+        "correct_answers": 5, "max_streak": 2,
+    })
+    assert display_width(line.split("—")[0]) == display_width(
+        leaderboard_entry({"rank": 1, "display_name": "Я",
+                           "correct_answers": 5, "max_streak": 2}).split("—")[0]
+    )
+    assert "…" in line
+    assert NAME_WIDTH == 18

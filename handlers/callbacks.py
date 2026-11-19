@@ -20,7 +20,13 @@ from keyboards.inline import (
     get_main_menu_keyboard,
 )
 from utils.data_manager import data_manager
-from utils.formatting import md_escape, user_label
+from utils.formatting import (
+    code_safe,
+    md_escape,
+    pad_width,
+    truncate_width,
+    user_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -232,32 +238,52 @@ def show_stats(call, bot):
     )
 
 
+# Ширины колонок в клетках моноширинного шрифта.
+# Имя обрезается, цифры прижимаются вправо — тогда столбцы не «пляшут».
+NAME_WIDTH = 18
+CORRECT_WIDTH = 4
+STREAK_WIDTH = 4
+
+
+def leaderboard_name(entry: dict) -> str:
+    """Имя участника, подготовленное для ```-блока: без разметки, обрезано по ширине."""
+    raw = entry.get("display_name") or entry.get("username") or "Без имени"
+    return truncate_width(code_safe(raw), NAME_WIDTH)
+
+
 def leaderboard_entry(entry: dict) -> str:
     """
-    Одна строка таблицы лидеров: `3. Cageyserg — 112 | 🔗 15`.
+    Одна строка таблицы лидеров, выровненная по колонкам.
+
+    Пример:
+        3. Cageyserg     —  112 | 🔗  15
 
     Слева — всего верных ответов, справа после 🔗 — лучшая серия подряд.
     """
-    name = md_escape(entry.get("display_name") or entry.get("username") or "Без имени")
-    correct = entry.get("correct_answers", 0)
-    streak = entry.get("max_streak", 0)
-    return f"{entry['rank']}. {name} — {correct} | 🔗 {streak}"
+    name = pad_width(leaderboard_name(entry), NAME_WIDTH)
+    correct = str(entry.get("correct_answers", 0)).rjust(CORRECT_WIDTH)
+    streak = str(entry.get("max_streak", 0)).rjust(STREAK_WIDTH)
+    return f"{str(entry['rank']).rjust(2)}. {name} — {correct} | 🔗 {streak}"
 
 
 def leaderboard_text(entries) -> str:
     """
     Текст таблицы лидеров.
 
+    Колонки выравниваются пробелами внутри ```-блока: в обычном тексте
+    Telegram использует пропорциональный шрифт, и цифры встают лесенкой.
     Для каждого участника показываются два показателя:
     - всего верных ответов;
     - лучшая серия (🔗) — максимальное число верных ответов подряд.
     """
     if not entries:
         return "*🏆 Таблица лидеров*\n\nПока нет участников. Станьте первым!"
-    lines = ["*🏆 Таблица лидеров*", ""]
-    lines += [leaderboard_entry(entry) for entry in entries]
-    lines += ["", "_верных | 🔗 серия — максимум подряд_"]
-    return "\n".join(lines)
+    rows = "\n".join(leaderboard_entry(entry) for entry in entries)
+    return (
+        "*🏆 Таблица лидеров*\n\n"
+        f"```\n{rows}\n```\n\n"
+        "_верных | 🔗 серия — максимум подряд_"
+    )
 
 
 def _delete_previous_leaderboard(bot, chat_id: int):

@@ -57,3 +57,52 @@ def user_label(username: str | None, firstname: str | None) -> str:
     if first:
         return first
     return "без имени"
+
+
+def display_width(text: str) -> int:
+    """
+    Ширина строки в «клетках» моноширинного шрифта Telegram.
+
+    Кириллица уже латиницы, а эмодзи и CJK занимают две клетки, поэтому
+    len() для выравнивания в code-блоке не подходит.
+    """
+    import unicodedata
+
+    width = 0
+    for ch in text:
+        if unicodedata.combining(ch):
+            continue
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
+
+
+def truncate_width(text: str, limit: int, ellipsis: str = "…") -> str:
+    """Обрезает строку до limit клеток, добавляя многоточие."""
+    if display_width(text) <= limit:
+        return text
+    budget = limit - display_width(ellipsis)
+    out = []
+    used = 0
+    for ch in text:
+        w = display_width(ch)
+        if used + w > budget:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + ellipsis
+
+
+def pad_width(text: str, limit: int) -> str:
+    """Дополняет строку пробелами справа до limit клеток."""
+    return text + " " * max(0, limit - display_width(text))
+
+
+def code_safe(text: Any | None) -> str:
+    """
+    Обезвреживает текст для вставки в ```-блок.
+
+    Обратная кавычка закрыла бы блок раньше времени, а перевод строки
+    развалил бы колонки, поэтому и то и другое заменяется.
+    """
+    value = "" if text is None else str(text)
+    return value.replace("`", "'").replace("\n", " ").replace("\r", " ").strip()
